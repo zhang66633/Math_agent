@@ -783,8 +783,8 @@ def solving_agent_node(state: AgentState) -> dict:
     max_rounds = 10  # 工具调用轮数上限（每轮可并发多个工具）
 
     # 工具结果截断目录（借鉴 cc-haha maxResultSizeChars）
-    from ..config import get_settings
-
+    # 注意：不使用局部 from ..config import get_settings —— 会遮蔽模块级导入，
+    # 令上文 time_budget_section f-string 里的 get_settings() 触发 F823（未赋值即引用）
     _settings = get_settings()
     _persist_dir = _settings.project_root / "data" / "task_files" / task_id
     _persist_dir.mkdir(parents=True, exist_ok=True)

@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 
 from ..auth import GitHubUser, get_current_user
 from ..config import get_settings
+from ..core.node_helpers import _pub_event
 from ..services.session import get_session_manager
 from .apikeys import _resolve_user_id, get_active_api_key
 from .schemas.request import CreateTaskRequest
@@ -237,7 +238,7 @@ async def get_task_events(
     plan / tool_call / tool_result / code_exec / task_end）。前端进会话时调用本端点
     恢复进度视图（dsh 式 session-projection 回放），配合 WS 实时事件使用。
     """
-    from app.core.node_helpers import _pub_event, read_task_events
+    from app.core.node_helpers import read_task_events
 
     events, total = read_task_events(task_id, after=after, limit=limit)
     return {

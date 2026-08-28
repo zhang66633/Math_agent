@@ -11,8 +11,6 @@
 
 from __future__ import annotations
 
-import json
-
 from app.core import node_helpers
 from app.core.node_helpers import (
     _clip_head_tail,
@@ -23,7 +21,6 @@ from app.core.node_helpers import (
     parse_execution_plan,
     read_task_events,
 )
-
 
 # ── 事件 seq ──────────────────────────────────────────────────────
 

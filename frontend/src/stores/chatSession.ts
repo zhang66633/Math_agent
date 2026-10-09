@@ -21,6 +21,17 @@ export interface ChatSession {
   updatedAt: string;
   /** 方案模式关联的任务 id（刷新后恢复事件回放/交付物） */
   taskId?: string;
+  /** 消息是否已从服务端加载（懒加载：同步时只预载最近几个会话，其余切换时再拉）。
+   *  undefined = 旧版本持久化的遗留数据（有消息即视为已加载，见 needsMessageLoad） */
+  messagesLoaded?: boolean;
+}
+
+/** 该会话是否需要按需拉取消息。
+ *  - messagesLoaded === false：同步时明确未预载 → 要拉
+ *  - undefined（旧持久化数据）：有消息视为已加载；空会话才拉一次 */
+function needsMessageLoad(s: ChatSession): boolean {
+  if (s.messagesLoaded !== undefined) return !s.messagesLoaded;
+  return s.messages.length === 0;
 }
 
 function now() {
@@ -229,6 +240,7 @@ export const useChatSessionStore = defineStore(
         messages: [],
         createdAt: now(),
         updatedAt: now(),
+        messagesLoaded: true, // 本地新建会话以本地为准，不需要回拉
       };
       getSessions(mode).value.push(session);
       setActiveId(mode, id);
@@ -239,8 +251,43 @@ export const useChatSessionStore = defineStore(
 
     function switchSession(mode: SessionMode, id: string) {
       const list = getSessions(mode).value;
-      if (list.some((s) => s.id === id)) {
-        setActiveId(mode, id);
+      const session = list.find((s) => s.id === id);
+      if (!session) return;
+      setActiveId(mode, id);
+      // 懒加载：同步时只预载了最近几个会话的消息，切到未加载的会话时按需拉取
+      if (needsMessageLoad(session)) void loadSessionMessages(mode, id);
+    }
+
+    /** 正在拉取消息的会话 id → loading 标记（供侧边栏转圈）。 */
+    const pendingMessageLoads = ref<Record<string, boolean>>({});
+
+    /** 按需拉取会话消息；并发去重，失败保持未加载（下次切换重试）。 */
+    async function loadSessionMessages(mode: SessionMode, id: string) {
+      const session = getSessions(mode).value.find((s) => s.id === id);
+      if (
+        !session ||
+        !needsMessageLoad(session) ||
+        pendingMessageLoads.value[id]
+      )
+        return;
+      pendingMessageLoads.value[id] = true;
+      try {
+        const res = await request.get(`/conversations/${id}/messages`, {
+          params: { limit: 2000 },
+        });
+        const msgs = (
+          (res.data?.messages ?? []) as Array<Record<string, unknown>>
+        ).map(payloadToMsg);
+        // 拉取期间会话可能已被删除，取最新引用再赋值
+        const target = getSessions(mode).value.find((s) => s.id === id);
+        if (target) {
+          target.messages = msgs;
+          target.messagesLoaded = true;
+        }
+      } catch {
+        /* 静默：保持未加载态，下次切换重试 */
+      } finally {
+        delete pendingMessageLoads.value[id];
       }
     }
 
@@ -343,6 +390,7 @@ export const useChatSessionStore = defineStore(
       const session = getActiveSession(mode).value;
       if (session) {
         session.messages = [];
+        session.messagesLoaded = true; // 本地已确认清空，无需回拉
         session.updatedAt = now();
         // 服务端无清空接口 → 删了重建同 id 会话再同步空消息
         void (async () => {
@@ -529,23 +577,49 @@ export const useChatSessionStore = defineStore(
           return;
         }
         const localBefore = [...getSessions(mode).value];
-        const loaded: ChatSession[] = [];
-        for (const c of convs) {
-          const msgsRes = await request.get(`/conversations/${c.id}/messages`, {
-            params: { limit: 2000 },
-          });
-          const msgs = (
-            (msgsRes.data?.messages ?? []) as Array<Record<string, unknown>>
-          ).map(payloadToMsg);
-          loaded.push({
-            id: c.id,
-            title: c.title,
-            mode: (c.mode as SessionMode) ?? mode,
-            messages: msgs,
-            createdAt: c.created_at,
-            updatedAt: c.updated_at,
-          });
-        }
+        // 懒加载：只对最近 N 个会话并行预载消息，其余留空、切换时按需拉取。
+        // 历史：此前对全部会话（上限 60）串行拉消息（每个 limit 2000），
+        // 四个模式合计最坏 240+ 个串行 round trip + 几十 MB JSON，
+        // 是进页面卡顿的主因。预载数量覆盖「恢复最近会话」的常规路径即可。
+        const PRELOAD_MESSAGE_SESSIONS = 3;
+        const byRecent = [...convs].sort(
+          (a, b) =>
+            new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+        );
+        const preloadIds = new Set(
+          byRecent.slice(0, PRELOAD_MESSAGE_SESSIONS).map((c) => c.id),
+        );
+        const loaded: ChatSession[] = await Promise.all(
+          convs.map(async (c) => {
+            let messages: Message[] = [];
+            let messagesLoaded = false;
+            if (preloadIds.has(c.id)) {
+              try {
+                const msgsRes = await request.get(
+                  `/conversations/${c.id}/messages`,
+                  { params: { limit: 2000 } },
+                );
+                messages = (
+                  (msgsRes.data?.messages ?? []) as Array<
+                    Record<string, unknown>
+                  >
+                ).map(payloadToMsg);
+                messagesLoaded = true;
+              } catch {
+                /* 单会话失败不阻塞其余，保持未加载态下次重试 */
+              }
+            }
+            return {
+              id: c.id,
+              title: c.title,
+              mode: (c.mode as SessionMode) ?? mode,
+              messages,
+              createdAt: c.created_at,
+              updatedAt: c.updated_at,
+              messagesLoaded,
+            };
+          }),
+        );
         const serverIds = new Set(loaded.map((s) => s.id));
         const localOnly = localBefore.filter((s) => !serverIds.has(s.id));
         const list = getSessions(mode);
@@ -603,6 +677,8 @@ export const useChatSessionStore = defineStore(
       createSession,
       newSession,
       switchSession,
+      loadSessionMessages,
+      pendingMessageLoads,
       deleteSession,
       renameSession,
       addMessage,

@@ -99,6 +99,11 @@
             <span class="truncate flex-1 text-xs">{{ s.session.title }}</span>
           </template>
           <div class="flex items-center gap-1 shrink-0">
+            <Loader2
+              v-if="chatSession.pendingMessageLoads[s.session.id]"
+              class="h-3 w-3 shrink-0 animate-spin text-muted-foreground"
+              title="正在加载消息"
+            />
             <button
               v-if="editing?.id !== s.session.id"
               class="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm opacity-0 group-hover:opacity-100 hover:bg-primary/10 hover:text-primary transition-all"
@@ -223,6 +228,7 @@ import {
   Check,
   Compass,
   Home,
+  Loader2,
   PanelLeftClose,
   Pencil,
   X,

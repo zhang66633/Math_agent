@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from pathlib import Path
@@ -17,6 +18,8 @@ from .embedder import KBEmbedder
 from .loader import KnowledgeBaseLoader, invalidate_kb_cache
 from .ranking import RRF_K, mmr_rerank, rrf_fusion  # 排序纯函数真源在 knowledge/ranking.py
 from .schemas import MethodCard, Paper, Problem, Template
+
+logger = logging.getLogger(__name__)
 
 
 class HybridRetriever(BaseRetriever):
@@ -134,8 +137,9 @@ class HybridRetriever(BaseRetriever):
                 hyde_text = expander.hyde(query)
                 if hyde_text and hyde_text != query:
                     queries.append(hyde_text)
-            except Exception:
-                pass  # gracefully degrade to single query
+            except Exception as e:
+                # 查询扩展失败只损失召回多样性，不致命；但需可见
+                logger.warning("query expansion 失败（query=%r），退化为单查询: %s", query[:80], e)
 
         # ── 1. Multi-path recall per query ────────────────────────────────
         # Each query runs: vector search + BM25 search
@@ -155,16 +159,18 @@ class HybridRetriever(BaseRetriever):
                     vec_docs.append(doc)
                 if vec_docs:
                     all_vector_ranked.append(vec_docs)
-            except Exception:
-                pass
+            except Exception as e:
+                # 降级不静默：向量索引未构建/无 Key 时用户看到的是「搜不到」，
+                # 没有日志就无法区分「真没有」和「检索坏了」
+                logger.warning("向量检索失败（query=%r），降级到其他召回路径: %s", q[:80], e)
 
             # 1b. BM25 keyword search
             try:
                 bm25_docs = self._bm25_search(q, k=fetch_k)
                 if bm25_docs:
                     all_bm25_ranked.append(bm25_docs)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("BM25 检索失败（query=%r）: %s", q[:80], e)
 
         # 1c. Tag-based exact match (deterministic, high-confidence)
         tag_docs = self._filter_by_tags(problem_type, k * 2)
@@ -219,8 +225,9 @@ class HybridRetriever(BaseRetriever):
 
                 reranker = create_reranker(llm=get_llm("analysis"), batch_size=10)
                 docs = reranker.rerank(query, docs, top_k=k)
-            except Exception:
-                pass  # graceful degradation
+            except Exception as e:
+                # rerank 是精度增强，失败保留 RRF+MMR 结果；需可见
+                logger.warning("LLM rerank 失败（query=%r），保留融合排序结果: %s", query[:80], e)
 
         # ── 5. Time decay: newer papers rank higher ───────────────────────
         docs = self._apply_time_decay(docs)

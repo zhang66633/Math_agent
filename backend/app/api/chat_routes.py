@@ -317,8 +317,10 @@ async def _event_stream(req: ChatRequest, api_key_config: dict | None = None):
                                 content=f"## 知识库参考资料（预检索）\n以下是从知识库中检索到的相关数学建模方法、论文和竞赛真题。请优先参考这些内容回答问题，必要时再调用搜索工具进行补充查询。\n\n{ctx}"
                             ),
                         )
-            except Exception:
-                pass  # RAG 预检索失败不阻塞对话
+            except Exception as e:
+                # RAG 预检索失败不阻塞对话，但需可见（否则用户看不到知识库
+                # 上下文缺失，还以为是模型不知道）
+                logger.warning("RAG 预检索失败，本次对话无知识库上下文: %s", e)
 
         # 循环：每轮 LLM 输出可能含文本 + tool_calls；若有 tool_calls 则执行后回灌
         for _ in range(MAX_TOOL_ITERATIONS):

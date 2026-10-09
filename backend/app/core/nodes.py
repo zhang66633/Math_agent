@@ -312,8 +312,10 @@ def retrieve_knowledge(state: AgentState) -> dict:
                         "page_content": doc.page_content[:500],
                     }
                 )
-    except Exception:
-        pass  # 向量库未初始化时优雅降级
+    except Exception as e:
+        # 向量库未初始化时优雅降级（tag 结果仍可用）；但不静默——
+        # 否则「知识库没检索到内容」与「向量检索坏了」在现象上无法区分
+        logger.warning("语义检索失败，仅使用 tag 精确匹配结果: %s", e)
 
     _pub_event(
         task_id,

@@ -6,8 +6,7 @@
 
 - `RULES.md` — 硬约束（技术栈/架构红线/Git 规范/目录约定）
 - `PLAN.md` — 实施计划（权威）
-- `ARCHITECTURE.md` / `LEARNING_PLAN.md` — 历史设计参考（已归档标注，不作开发依据）
-- `RESOURCES_AND_ROADMAP.md` — 资源清单与路线图
+- `docs/README.md` — 文档索引：`docs/` 为现行文档，`docs/archive/` 为历史归档（记录决策与踩坑，不作开发依据）
 
 ## 常用命令
 

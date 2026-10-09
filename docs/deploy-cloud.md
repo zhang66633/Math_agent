@@ -1,4 +1,4 @@
-# MathModelAgent 云服务器部署指南
+﻿# MathModelAgent 云服务器部署指南
 
 ## 部署包内容
 
@@ -7,7 +7,7 @@
 | backend/Dockerfile | 云化镜像：pip 安装 + tesseract 中英文 + poppler + Noto CJK，HOST=0.0.0.0:8002，沙箱 subprocess |
 | docker-compose.cloud.yml | 一键编排：data/ + knowledge_base/ 挂卷持久化、健康检查、unless-stopped 自愈 |
 | backend/.env.production.example | 密钥模板（DeepSeek / GitHub OAuth / JWT），复制为 .env.production 填写 |
-| DEPLOY_CLOUD.md | 本文档 |
+| deploy-cloud.md | 本文档 |
 
 ## 服务器部署步骤（4 步）
 

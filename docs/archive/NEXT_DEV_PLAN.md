@@ -1,8 +1,8 @@
-# 后续开发计划与双人分工（NEXT_DEV_PLAN）
+﻿# 后续开发计划与双人分工（NEXT_DEV_PLAN）
 
 > 版本 v1.0 · 2026-08-14 · 基线 commit `29707f0`
 > 用途：代码审查修复收尾后的完成度评估 + 后续方向 + **双人开发代码分区（互不重叠）**。
-> 权威依据：`RULES.md`（硬约束）、`PLAN.md`、`RESOURCES_AND_ROADMAP.md`、`.mstar/plans/audit-2026-08-14/README.md`（本次审计结论）。
+> 权威依据：`RULES.md`（硬约束）、`PLAN.md`、`../roadmap.md`、`.mstar/plans/audit-2026-08-14/README.md`（本次审计结论）。
 
 ---
 
@@ -204,7 +204,7 @@ GET  /api/profile/achievements        # 用户已解锁成就 + 进度
 - 提交格式 `type: 中文描述`（feat/fix/chore/docs/refactor）。
 - 不改对方目录；共享文件改动必须先沟通。
 - 后端改动跑 `cd backend && python -m pytest`；前端改动跑 `cd frontend && pnpm typecheck && pnpm lint`。
-- 每个方向功能完成后，双方在本文档「完成度评估」对应行打勾并更新 `RESOURCES_AND_ROADMAP.md`。
+- 每个方向功能完成后，双方在本文档「完成度评估」对应行打勾并更新 `../roadmap.md`。
 
 ### 4.4 SSE 聊天工具事件协议 v2.1（A 已实现，B 面板照此渲染）
 

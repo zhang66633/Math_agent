@@ -1,6 +1,6 @@
 # 数学建模多智能体系统 — 实施计划
 
-> ⚠️ **蓝图说明**：`ARCHITECTURE.md` 为早期废弃方案（Next.js + MUI），**一律不作参考**，以本文档为准。
+> ⚠️ **蓝图说明**：`docs/archive/ARCHITECTURE.md` 为早期废弃方案（Next.js + MUI），**一律不作参考**，以本文档为准。
 > 版本: v0.4 | 日期: 2026-07-23 | 项目目录: `math_agent/`（原 NB_project 已并入，GitHub 远程 `zhang66633/NB_project`）
 >
 > ### 📌 当前进度对齐（2026-07-23 审查快照）
@@ -59,13 +59,14 @@
 
 ```
 math_agent/
-├── ARCHITECTURE.md                  # [废弃] 原始 Next.js + MUI 架构蓝图，不作参考
-├── PLAN.md                          # 本文件：实施计划
+├── AGENTS.md                        # Agent 工作约定
+├── PLAN.md                          # 本文件：实施计划（权威）
 ├── README.md
 ├── RULES.md                         # 项目协作红线规则
+├── docs/                            # 开发文档（现行 + archive 历史归档，见 docs/README.md 索引）
 ├── docker-compose.yml
-├── start.bat                        # 一键启动前后端
-├── stop.bat                         # 一键停止
+├── start.py                        # 统一入口：install / start / stop 子命令
+├── start.bat                       # Windows 转发器（纯 ASCII，逻辑在 start.py）
 │
 ├── backend/                         # FastAPI + LangGraph 后端
 │   ├── pyproject.toml
@@ -343,7 +344,7 @@ START → classify_problem → retrieve_knowledge → plan_execution
 5. ✅ 首批知识内容: 20 张方法卡片 + 5 篇论文 + 3 个模板（**P0 目标已达标**）
 6. ✅ ChromaDB 向量化管道（含增量索引）
 7. ✅ Docker Compose 文件 (backend + frontend + redis)
-8. ✅ 启动脚本 `start.bat` / `stop.bat`
+8. ✅ 启动脚本 `start.py`（install/start/stop 三合一）+ `start.bat` 转发
 
 **可交付**: `docker-compose up` 全栈启动；`GET /api/health` 返回 200
 
@@ -428,7 +429,7 @@ START → classify_problem → retrieve_knowledge → plan_execution
 | Agent 数量 | 5 个 + Orchestrator（源项目只有 4 个） | 多了验证 Agent，支持回退循环 |
 | WebSocket | Redis Pub/Sub 解耦 | 匹配前端 TaskWebSocket；支持水平扩展 |
 | 代码沙箱 | subprocess → Docker | 渐进式策略 |
-| 启动方式 | `start.bat` / `stop.bat` | 一键启停，简化开发流程 |
+| 启动方式 | `python start.py`（install/start/stop 子命令，跨平台） | 单入口消除三套操作系统脚本的逻辑漂移 |
 
 ---
 

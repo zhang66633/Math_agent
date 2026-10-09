@@ -1,4 +1,4 @@
-# MathModelAgent — 资源库与开发路线图
+﻿# MathModelAgent — 资源库与开发路线图
 
 > 最后更新: 2026-07-25 (方案模式质量大修 + 路线图同步已完成项)
 > 状态: 活跃开发中
@@ -140,9 +140,9 @@ seaborn、scikit-learn、statsmodels、xgboost、lightgbm、torch、tensorflow�
 
 ## 五、缺失环节与改进方向
 
-### 5.1 记忆与上下文（参考 MEMORY_CONTEXT_GUIDE.md）
+### 5.1 记忆与上下文（参考 memory-context-guide.md）
 
-MEMORY_CONTEXT_GUIDE.md 提供了 Agent Xi 项目的实战经验，以下模式尚未在 math_agent 中落地:
+memory-context-guide.md 提供了 Agent Xi 项目的实战经验，以下模式尚未在 math_agent 中落地:
 
 | 模式 | 来源章节 | 当前状态 | 建议 |
 |------|---------|---------|------|
@@ -328,7 +328,7 @@ MEMORY_CONTEXT_GUIDE.md 提供了 Agent Xi 项目的实战经验，以下模式�
 
 ## 七、设计参考
 
-### MEMORY_CONTEXT_GUIDE.md 核心模式速查
+### memory-context-guide.md 核心模式速查
 
 | 模式 | 一句话 | 适用场景 |
 |------|--------|---------|

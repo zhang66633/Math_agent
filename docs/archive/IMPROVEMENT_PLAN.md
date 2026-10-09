@@ -1,10 +1,10 @@
-# NB_project 问题清单与解决方案（多人协作版）
+﻿# NB_project 问题清单与解决方案（多人协作版）
 
 > **文档用途**：项目完善工作的统一入口。第一部分按模块分类列出问题，第二部分按编号给出对应解决方案，第三部分为协作防冲突规则（认领表 + 文件互斥表）。
 >
 > **更新规则**：认领/完成任务时更新第三部分认领表；问题修复后不要把条目从文档删除，在状态列标注 `✅ 已完成 + commit`。
 >
-> **关联文档**：[RULES.md](./RULES.md)（硬约束）、[RESOURCES_AND_ROADMAP.md](./RESOURCES_AND_ROADMAP.md)（历史路线图）
+> **关联文档**：[RULES.md](../../RULES.md)（硬约束）、[资源与路线图](../roadmap.md)（历史路线图）
 
 ---
 
@@ -54,7 +54,7 @@
 
 | 编号 | 优先级 | 问题 | 现状证据 | 涉及文件 |
 |------|--------|------|----------|----------|
-| E1 | P2 | 高频方法卡片仍有缺口（LSTM/Prophet、ANP/CRITIC、NSGA-II、XGBoost/LightGBM、DBSCAN 等）；模板仅 3 个 | 见 RESOURCES_AND_ROADMAP.md 第一节缺口表 | `backend/knowledge_base/methods/**`、`templates/**`（纯新增 yaml） |
+| E1 | P2 | 高频方法卡片仍有缺口（LSTM/Prophet、ANP/CRITIC、NSGA-II、XGBoost/LightGBM、DBSCAN 等）；模板仅 3 个 | 见 ../roadmap.md 第一节缺口表 | `backend/knowledge_base/methods/**`、`templates/**`（纯新增 yaml） |
 | E2 | P1 | 检索缺元数据过滤（按题型/年份/赛制/难度），召回精度受限 | `knowledge/retriever.py` 无 where 过滤参数 | `backend/app/knowledge/retriever.py`、`embedder.py`、`backend/app/api/knowledge_routes.py` |
 
 ## F. 部署与运维
@@ -62,7 +62,7 @@
 | 编号 | 优先级 | 问题 | 现状证据 | 涉及文件 |
 |------|--------|------|----------|----------|
 | F1 | P2 | Windows 下 subprocess 沙箱无 rlimit；Docker 分支已写未验证未文档 | `executor.py:96` `_run_docker` 存在但无测试 | `backend/app/sandbox/executor.py`（仅 `_run_docker` 区域）、`backend/Dockerfile.sandbox`、README |
-| F2 | P1 | docker-compose 自认未验证；frontend 容器仍暴露 5174（dev 风格）；nginx.conf 写了没接入 | `docker-compose.yml`、RESOURCES_AND_ROADMAP.md §8.5 | `docker-compose.yml`、`nginx.conf`、`frontend/Dockerfile`、`backend/Dockerfile` |
+| F2 | P1 | docker-compose 自认未验证；frontend 容器仍暴露 5174（dev 风格）；nginx.conf 写了没接入 | `docker-compose.yml`、../roadmap.md §8.5 | `docker-compose.yml`、`nginx.conf`、`frontend/Dockerfile`、`backend/Dockerfile` |
 
 ## G. 功能扩展
 
@@ -127,7 +127,7 @@
 ## B 组：数据持久化与用户体系（最优先）
 
 ### B1 学习进度持久化（P0）★
-1. 新建 `backend/app/services/learning_store.py`：`LearningStore` 类，数据存 `backend/data/learning/{user_id}.json`，**原子写**（先写 .tmp 再 os.replace，参考 MEMORY_CONTEXT_GUIDE.md）。
+1. 新建 `backend/app/services/learning_store.py`：`LearningStore` 类，数据存 `backend/data/learning/{user_id}.json`，**原子写**（先写 .tmp 再 os.replace，参考 ../memory-context-guide.md）。
 2. 修改 `mastery_tracker.py`：`MasteryTracker.__init__` 注入 store（默认实例）；`update_from_event`、`apply_decay` 变更后自动 `store.save()`；启动时 `store.load()` 恢复。
 3. **保持 `get_mastery_tracker()` 单例签名不变**，路由层零改动（learning_routes.py 留给 B2）。
 - **验收**：学习→重启后端→进度完整保留；数据文件合法 JSON；中断写入不损坏数据。
@@ -209,7 +209,7 @@
 ## E 组：知识库与内容
 
 ### E1 方法卡片/模板扩充（P2）
-1. 按 RESOURCES_AND_ROADMAP.md 第一节缺口表补充：LSTM/Prophet、ANP/CRITIC、NSGA-II、XGBoost/LightGBM、DBSCAN/GMM、随机森林、传染病模型等（≥10 张）。
+1. 按 ../roadmap.md 第一节缺口表补充：LSTM/Prophet、ANP/CRITIC、NSGA-II、XGBoost/LightGBM、DBSCAN/GMM、随机森林、传染病模型等（≥10 张）。
 2. 每张 yaml 严格对齐现有卡片结构（principle/formulas/applicable_when/code_snippets 等），新增 1–2 个模板（如统计类、图论类框架）。
 3. 导入后用 `scripts/paper_quality_check.py` 或现有校验脚本过一遍，再调 `/api/kb/reindex`。
 - **验收**：reindex 后新条目可被检索命中；YAML 全部合法。
@@ -256,7 +256,7 @@
 - **冲突提示**：`chat_routes.py` 与 C1 同文件 → **C1 先合入**；前端页面独占。
 
 ### G3 LaTeX 导出（P2）
-1. 新建 `backend/templates/latex/cumcm.tex.j2`、`mcm.tex.j2`（参考 RESOURCES_AND_ROADMAP.md 第二节模板项目）。
+1. 新建 `backend/templates/latex/cumcm.tex.j2`、`mcm.tex.j2`（参考 ../roadmap.md 第二节模板项目）。
 2. `export_routes.py` 新增 `POST /api/export/latex`：Markdown → Jinja2 渲染 .tex（标题/公式/表格/图片引用）。
 3. 前端 solution 完成页加「导出 LaTeX」按钮。
 - **验收**：导出的 .tex 用户本地可编译通过（TeX Live 由用户自备）。

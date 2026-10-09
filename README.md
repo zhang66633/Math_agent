@@ -25,11 +25,11 @@ cd NB_project
 ### 2. 一键安装
 
 ```bat
-install.bat            REM Windows
+python start.py install     REM Windows / Linux / macOS 通用
 ```
 
 ```bash
-bash install.sh        # Linux / macOS（可选参数 --docker 构建沙箱镜像并启用硬隔离）
+python3 start.py install          # 可选 --docker 构建沙箱镜像并启用硬隔离
 ```
 
 脚本自动完成：环境检查 → 创建 `.venv` → 安装后端依赖 → 生成 `backend/.env`（随机 `JWT_SECRET`、端口 8002、沙箱默认 subprocess）→ 安装前端依赖。
@@ -37,11 +37,11 @@ bash install.sh        # Linux / macOS（可选参数 --docker 构建沙箱镜�
 ### 3. 启动
 
 ```bat
-start.bat              REM Windows 一键启动前后端
+start.bat                  REM Windows 一键启动前后端（等价 python start.py）
 ```
 
 ```bash
-python start.py        # Linux / macOS
+python3 start.py           # Linux / macOS；stop 用 python start.py stop
 ```
 
 打开 **http://localhost:5174** → 首页「API Key」输入框粘贴你的 DeepSeek / OpenAI 兼容 Key 即可开始使用（Key 仅保存在本机 `backend/data`，不上传）。
@@ -64,7 +64,7 @@ pnpm dev                       # http://localhost:5174（/api 代理到 127.0.0.
 - **没配 API Key 能用吗**：能——学习中心与题库完全可用；AI 对话、方案生成、知识库向量化需要先配 Key（网页首页粘贴，或 `backend/.env` 填 `OPENAI_API_KEY`）。
 - **不登录能用吗**：能——访客模式免登录全功能可用，对话、任务、学习记录都持久化在本机（访客数据共享一个默认桶）；GitHub 登录仅限项目贡献者白名单（多端同步用）。
 - **数据存哪 / 会丢吗**：对话、任务、学习记录、Key 全部落盘在 `backend/data/`（SQLite / JSON）；聊天另存浏览器 localStorage 并自动同步到服务端，清缓存、换浏览器也不丢。
-- **沙箱是什么模式**：一键安装默认 subprocess（网络阻断 + 60s 超时 + 内存限制，适合个人与可信输入）；执行 `install.bat --docker`（或 `bash install.sh --docker`）构建镜像后切换 Docker 硬隔离（`--network=none` 等），公开部署推荐此模式。
+- **沙箱是什么模式**：一键安装默认 subprocess（网络阻断 + 60s 超时 + 内存限制，适合个人与可信输入）；执行 `python start.py install --docker` 构建镜像后切换 Docker 硬隔离（`--network=none` 等），公开部署推荐此模式。
 - **向量索引要手动建吗**：不用——首次启动自动检测缺失并在后台重建。
 - **PDF OCR**：沙箱镜像已内置 tesseract 与 poppler；手动安装（主机模式）如需本地 OCR 请自行安装这两个系统依赖。
 
@@ -156,8 +156,8 @@ pnpm dev                       # http://localhost:5174（/api 代理到 127.0.0.
 
 ```
 NB_project/
-├── install.bat / install.sh     # 一键安装（venv + 依赖 + .env 生成）
-├── start.bat / stop.bat / start.py  # 一键启停
+├── start.py                      # 统一入口：install / start / stop 三个子命令
+├── start.bat                     # Windows 转发器（纯 ASCII，逻辑都在 start.py）
 ├── docker-compose.yml           # 全栈容器化编排（可选）
 ├── nginx.conf                   # 生产反向代理配置模板（compose 未挂载，按需使用）
 ├── PLAN.md / RULES.md           # 现行开发权威文档
@@ -220,4 +220,4 @@ NB_project/
 - `backend/data/`（apikeys/sessions/learning.db/practice.db/chroma_db/uploads）含本地运行时数据，已被 `.gitignore` 排除。
 - `backend/knowledge_base/` 的 YAML 源文件在 git 中，clone 后启动即自动建索引。
 - 默认分支为 `main`。
-- 开发以 [PLAN.md](./PLAN.md) 与 [RULES.md](./RULES.md) 为准；[ARCHITECTURE.md](./ARCHITECTURE.md) 已归档（勿作开发依据）。
+- 开发以 [PLAN.md](./PLAN.md) 与 [RULES.md](./RULES.md) 为准；其余文档在 `docs/` 分级存放（现行 + 历史归档），索引见 [docs/README.md](./docs/README.md)；早期架构蓝图 [docs/archive/ARCHITECTURE.md](./docs/archive/ARCHITECTURE.md) 已归档（勿作开发依据）。

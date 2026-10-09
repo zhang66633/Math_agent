@@ -1,19 +1,20 @@
-"""学习事件与成就持久化 — SQLite(重启不丢)。
+﻿"""学习事件与成就持久化 — SQLite(重启不丢)。
 
 learning_events: 学习事件唯一事实源(单元完成/练习作答),成就、连续天数、
 掌握度重放都从这里恢复。achievements: 成就解锁状态 + 未读标记。
 
-沿用 practice_store 的 threading.local + WAL 连接模式。
+连接管理（threading.local + WAL）用 services/storage.py 的 SqliteRepo 基类。
 """
 
 from __future__ import annotations
 
-import sqlite3
-import threading
-from datetime import UTC, datetime
-from pathlib import Path
+from .storage import SqliteRepo, utcnow
 
-SCHEMA_SQL = """
+
+class LearningStore(SqliteRepo):
+    """学习事件与成就持久化存储。"""
+
+    SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS learning_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL DEFAULT 'default',
@@ -33,36 +34,6 @@ CREATE TABLE IF NOT EXISTS achievements (
 );
 """
 
-
-def _utcnow() -> str:
-    return datetime.now(UTC).isoformat()
-
-
-class LearningStore:
-    """学习事件与成就持久化存储。"""
-
-    def __init__(self, db_path: Path):
-        self._db_path = db_path
-        self._lock = threading.Lock()
-        self._local = threading.local()
-        self._init_db()
-
-    def _get_conn(self) -> sqlite3.Connection:
-        conn = getattr(self._local, "conn", None)
-        if conn is None:
-            conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA journal_mode=WAL")
-            self._local.conn = conn
-        return conn
-
-    def _init_db(self) -> None:
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        with self._lock:
-            with self._get_conn() as conn:
-                conn.executescript(SCHEMA_SQL)
-                conn.commit()
-
     # ── 学习事件 ────────────────────────────────────────
 
     def add_event(
@@ -78,7 +49,7 @@ class LearningStore:
                 cur = conn.execute(
                     "INSERT INTO learning_events(user_id, unit_id, event_type, score, created_at)"
                     " VALUES (?, ?, ?, ?, ?)",
-                    (user_id, unit_id, event_type, score, created_at or _utcnow()),
+                    (user_id, unit_id, event_type, score, created_at or utcnow()),
                 )
                 conn.commit()
                 # 返回行 id：调用方据此登记掌握度重放守卫，防双计（审查 P1）
@@ -126,7 +97,7 @@ class LearningStore:
                 conn.execute(
                     "INSERT INTO achievements(user_id, achievement_id, unlocked_at, acknowledged)"
                     " VALUES (?, ?, ?, 0)",
-                    (user_id, achievement_id, _utcnow()),
+                    (user_id, achievement_id, utcnow()),
                 )
                 conn.commit()
                 return True

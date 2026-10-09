@@ -1,6 +1,7 @@
 """SQLite 会话存储 — 对话持久化 + 消息天的 CRUD 操作。
 
-使用 Python 标准库 sqlite3，无额外依赖。
+连接管理（threading.local + WAL）已收敛到 services/storage.py 的
+SqliteRepo 基类，本文件只保留会话/消息的表结构与业务逻辑。
 表结构：
   conversations: id, user_id, mode, title, created_at, updated_at
   messages:      id, conversation_id, msg_type, content, tool_name,
@@ -13,15 +14,25 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-import threading
-from datetime import UTC, datetime
-from pathlib import Path
 
 from app.config import get_settings
 
+from .storage import SqliteRepo, utcnow
+
 logger = logging.getLogger(__name__)
 
-SCHEMA_SQL = """
+
+class SqliteSessionStore(SqliteRepo):
+    """线程安全的 SQLite 会话存储。
+
+    Usage:
+        store = SqliteSessionStore(db_path=Path("data/sessions.db"))
+        conv = store.create_conversation(mode="chat", title="新对话")
+        store.add_message(conv_id, msg_dict)
+        msgs = store.get_messages(conv_id)
+    """
+
+    SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS conversations (
     id          TEXT PRIMARY KEY,
     user_id     TEXT NOT NULL DEFAULT 'default',
@@ -55,56 +66,6 @@ CREATE INDEX IF NOT EXISTS idx_conversations_user_mode
     ON conversations(user_id, mode, updated_at DESC);
 """
 
-
-def _now() -> str:
-    return datetime.now(UTC).isoformat()
-
-
-class SqliteSessionStore:
-    """线程安全的 SQLite 会话存储。
-
-    Usage:
-        store = SqliteSessionStore(db_path=Path("data/sessions.db"))
-        conv = store.create_conversation(mode="chat", title="新对话")
-        store.add_message(conv_id, msg_dict)
-        msgs = store.get_messages(conv_id)
-    """
-
-    def __init__(self, db_path: Path):
-        self._db_path = db_path
-        self._lock = threading.Lock()
-        self._local = threading.local()  # 每线程单连接复用（见 _get_conn）
-        self._init_db()
-
-    # ── 初始化 ──────────────────────────────────────────
-
-    def _get_conn(self) -> sqlite3.Connection:
-        """每线程独立连接（复用，不每次新建）；启用 WAL + 外键。"""
-        conn = getattr(self._local, "conn", None)
-        if conn is None:
-            conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA foreign_keys=ON")
-            self._local.conn = conn
-        return conn
-
-    def close(self):
-        """关闭当前线程的连接（进程退出前调用）。"""
-        conn = getattr(self._local, "conn", None)
-        if conn is not None:
-            try:
-                conn.close()
-            except Exception:
-                pass
-            self._local.conn = None
-
-    def _init_db(self):
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        with self._get_conn() as conn:
-            conn.executescript(SCHEMA_SQL)
-            conn.commit()
-
     # ── 会话 CRUD ────────────────────────────────────────
 
     def create_conversation(
@@ -122,7 +83,7 @@ class SqliteSessionStore:
             if existing:
                 return existing
         conv_id = conv_id or f"conv_{uuid.uuid4().hex[:12]}"
-        now = _now()
+        now = utcnow()
         with self._lock:
             with self._get_conn() as conn:
                 conn.execute(
@@ -189,7 +150,7 @@ class SqliteSessionStore:
         updates = {k: v for k, v in fields.items() if k in allowed}
         if not updates:
             return self.get_conversation(conv_id, user_id=user_id)
-        updates["updated_at"] = _now()
+        updates["updated_at"] = utcnow()
 
         set_clause = ", ".join(f"{k} = ?" for k in updates)
         values = list(updates.values()) + [conv_id]
@@ -226,7 +187,7 @@ class SqliteSessionStore:
         """追加一条消息。msg 需含 id, msg_type, created_at 字段。"""
         # 自动填充 created_at
         if "created_at" not in msg:
-            msg["created_at"] = _now()
+            msg["created_at"] = utcnow()
 
         with self._lock:
             with self._get_conn() as conn:
@@ -256,7 +217,7 @@ class SqliteSessionStore:
                     # 更新会话的 updated_at
                     conn.execute(
                         "UPDATE conversations SET updated_at = ? WHERE id = ?",
-                        (_now(), conv_id),
+                        (utcnow(), conv_id),
                     )
                     conn.commit()
                 except sqlite3.IntegrityError:
@@ -271,7 +232,7 @@ class SqliteSessionStore:
             with self._get_conn() as conn:
                 for msg in msgs:
                     if "created_at" not in msg:
-                        msg["created_at"] = _now()
+                        msg["created_at"] = utcnow()
                     try:
                         conn.execute(
                             """INSERT OR REPLACE INTO messages
@@ -300,7 +261,7 @@ class SqliteSessionStore:
                         logger.warning("批量插入消息失败: %s", msg.get("id"))
                 conn.execute(
                     "UPDATE conversations SET updated_at = ? WHERE id = ?",
-                    (_now(), conv_id),
+                    (utcnow(), conv_id),
                 )
                 conn.commit()
         return count

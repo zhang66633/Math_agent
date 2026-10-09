@@ -1,18 +1,23 @@
-"""练习记录与错题本存储 — SQLite 持久化(重启不清零)。
+﻿"""练习记录与错题本存储 — SQLite 持久化(重启不清零)。
 
-沿用 sqlite_session_store 的 threading.local 每线程连接模式。
+连接管理用 services/storage.py 的 SqliteRepo 基类（threading.local
+每线程连接 + WAL）；本文件的 _migrate/_post_init 保留旧库 round_id
+补列与错题本回填两步初始化逻辑。
 表 practice_records: 每次作答一条记录,错题以「同题最新一次作答正确」判定掌握。
 """
 
 from __future__ import annotations
 
 import sqlite3
-import threading
-from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
-SCHEMA_SQL = """
+from .storage import SqliteRepo, utcnow
+
+
+class PracticeStore(SqliteRepo):
+    """选择题作答记录/错题本存储。"""
+
+    SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS practice_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL DEFAULT 'default',
@@ -34,56 +39,30 @@ CREATE TABLE IF NOT EXISTS mistake_book (
 );
 """
 
+    def _migrate(self, conn: sqlite3.Connection) -> None:
+        # 轻量迁移先行: 旧库缺 round_id 列(必须先于 SCHEMA_SQL, 其索引引用该列)
+        try:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(practice_records)")]
+        except sqlite3.OperationalError:
+            cols = []  # 表还不存在, SCHEMA_SQL 会建
+        if cols and "round_id" not in cols:
+            conn.execute(
+                "ALTER TABLE practice_records ADD COLUMN round_id TEXT NOT NULL DEFAULT ''"
+            )
+            conn.commit()
 
-def _utcnow() -> str:
-    return datetime.now(UTC).isoformat()
-
-
-class PracticeStore:
-    """选择题作答记录/错题本存储。"""
-
-    def __init__(self, db_path: Path):
-        self._db_path = db_path
-        self._lock = threading.Lock()
-        self._local = threading.local()
-        self._init_db()
-
-    def _get_conn(self) -> sqlite3.Connection:
-        conn = getattr(self._local, "conn", None)
-        if conn is None:
-            conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA journal_mode=WAL")
-            self._local.conn = conn
-        return conn
-
-    def _init_db(self) -> None:
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        with self._lock:
-            with self._get_conn() as conn:
-                # 轻量迁移先行: 旧库缺 round_id 列(必须先于 SCHEMA_SQL, 其索引引用该列)
-                try:
-                    cols = [r[1] for r in conn.execute("PRAGMA table_info(practice_records)")]
-                except sqlite3.OperationalError:
-                    cols = []  # 表还不存在, SCHEMA_SQL 会建
-                if cols and "round_id" not in cols:
+    def _post_init(self, conn: sqlite3.Connection) -> None:
+        # 错题本回填: 按历史记录最新状态(仅对空错题本生效, 幂等)
+        n = conn.execute("SELECT COUNT(*) AS n FROM mistake_book").fetchone()["n"]
+        if n == 0:
+            for qid, is_correct in self._latest_states(conn):
+                if not is_correct:
                     conn.execute(
-                        "ALTER TABLE practice_records ADD COLUMN round_id TEXT NOT NULL DEFAULT ''"
+                        "INSERT OR IGNORE INTO mistake_book(user_id, question_id, added_at)"
+                        " VALUES ('default', ?, ?)",
+                        (qid, utcnow()),
                     )
-                    conn.commit()
-                conn.executescript(SCHEMA_SQL)
-                conn.commit()
-                # 错题本回填: 按历史记录最新状态(仅对空错题本生效, 幂等)
-                n = conn.execute("SELECT COUNT(*) AS n FROM mistake_book").fetchone()["n"]
-                if n == 0:
-                    for qid, is_correct in self._latest_states(conn):
-                        if not is_correct:
-                            conn.execute(
-                                "INSERT OR IGNORE INTO mistake_book(user_id, question_id, added_at)"
-                                " VALUES ('default', ?, ?)",
-                                (qid, _utcnow()),
-                            )
-                    conn.commit()
+            conn.commit()
 
     @staticmethod
     def _latest_states(conn: sqlite3.Connection) -> list[tuple[str, bool]]:
@@ -119,7 +98,7 @@ class PracticeStore:
                         choice,
                         int(is_correct),
                         round_id,
-                        created_at or _utcnow(),
+                        created_at or utcnow(),
                     ),
                 )
                 row_id = int(cur.lastrowid)
@@ -133,7 +112,7 @@ class PracticeStore:
                     conn.execute(
                         "INSERT OR IGNORE INTO mistake_book(user_id, question_id, added_at)"
                         " VALUES (?, ?, ?)",
-                        (user_id, question_id, _utcnow()),
+                        (user_id, question_id, utcnow()),
                     )
                 conn.commit()
                 return row_id
@@ -172,7 +151,7 @@ class PracticeStore:
                         conn.execute(
                             "INSERT OR IGNORE INTO mistake_book(user_id, question_id, added_at)"
                             " VALUES (?, ?, ?)",
-                            (user_id, qid, _utcnow()),
+                            (user_id, qid, utcnow()),
                         )
                 conn.commit()
                 return deleted
@@ -186,7 +165,7 @@ class PracticeStore:
                 conn.execute(
                     "INSERT OR IGNORE INTO mistake_book(user_id, question_id, added_at)"
                     " VALUES (?, ?, ?)",
-                    (user_id, question_id, _utcnow()),
+                    (user_id, question_id, utcnow()),
                 )
                 conn.commit()
 

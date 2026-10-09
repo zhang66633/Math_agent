@@ -63,3 +63,21 @@ def test_resolve_kb_paths_matches_settings(monkeypatch):
 
     assert root == settings.kb_root
     assert persist == settings.chroma_dir
+
+
+def test_get_retriever_is_shared_singleton(monkeypatch):
+    """回归：kb_tools 与知识库 API 必须共用同一 retriever 实例。
+
+    历史上 kb_tools 自建第二个 HybridRetriever 单例，import/reindex 后
+    invalidate_shared_retriever() 只清 API 那个，chat/teach 工具路径的
+    BM25 快照直到重启才可见新内容。两个入口同一个实例，失效才只有一处。
+    """
+    from app.knowledge import retriever as retriever_mod
+
+    retriever_mod.invalidate_shared_retriever()
+    first = kb.get_retriever()
+    assert first is retriever_mod.get_shared_retriever()
+
+    # reset_retriever 必须同时清掉共享单例（否则测试间串味）
+    kb.reset_retriever()
+    assert retriever_mod._shared_retriever is None

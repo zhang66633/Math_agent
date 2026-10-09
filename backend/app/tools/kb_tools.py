@@ -21,13 +21,11 @@ from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field
 
 from ..config import get_settings
-from ..knowledge.retriever import HybridRetriever
 
 logger = logging.getLogger(__name__)
 
 _KB_ROOT: Path | None = None
 _PERSIST_DIR: Path | None = None
-_RETRIEVER: BaseRetriever | None = None
 
 
 def _resolve_kb_paths():
@@ -46,23 +44,23 @@ def _resolve_kb_paths():
 
 
 def get_retriever() -> BaseRetriever:
-    """获取全局单例 retriever，绑定项目默认的嵌入 provider。"""
-    global _RETRIEVER
-    if _RETRIEVER is None:
-        kb_root, persist_dir = _resolve_kb_paths()
-        settings = get_settings()
-        _RETRIEVER = HybridRetriever(
-            kb_root=kb_root,
-            persist_dir=persist_dir,
-            embedding_provider=settings.kb_embedding_provider or "openai_compatible",
-        )
-    return _RETRIEVER
+    """获取全局单例 retriever——与知识库 API 共用 knowledge.retriever.get_shared_retriever。
+
+    历史教训：这里曾自建第二个 HybridRetriever 单例，invalidate_shared_retriever()
+    只清知识库 API 那个。import/reindex/CRUD 后 chat/teach 工具路径的 BM25
+    快照直到重启才可见新内容（正确性 bug），且双份索引 + 双份 Chroma 客户端
+    白占内存与首调用延迟。两个入口必须同一个实例，失效逻辑才只有一处。
+    """
+    from ..knowledge.retriever import get_shared_retriever
+
+    return get_shared_retriever()
 
 
 def reset_retriever() -> None:
-    """测试用：清空全局 retriever，下次重新加载。"""
-    global _RETRIEVER
-    _RETRIEVER = None
+    """测试用：清空全局 retriever（含共享单例），下次重新加载。"""
+    from ..knowledge.retriever import invalidate_shared_retriever
+
+    invalidate_shared_retriever()
 
 
 # ── Input Schemas ──────────────────────────────────────────────

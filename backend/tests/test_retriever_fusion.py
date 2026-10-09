@@ -218,6 +218,81 @@ def test_ranking_module_pure_functions():
         assert d.metadata["score"] >= 0.0
 
 
+# ── query embedding 缓存与按需计算（优化 ④）─────────────────────────
+
+
+class _CountingEmbeddingFn:
+    def __init__(self, query_vec):
+        self._query_vec = query_vec
+        self.calls = 0
+
+    def embed_query(self, query):
+        self.calls += 1
+        return self._query_vec
+
+
+def test_embed_query_caches_per_instance():
+    """同一 query 二次 embed 命中实例级缓存（embedding 走 API 时是真实费用）。"""
+    fn = _CountingEmbeddingFn([1.0, 0.0])
+    store = _FakeVectorStore(embeddings={})
+    store._embedding_function = fn
+    r = _bare_retriever(store)
+
+    v1 = r._embed_query("线性规划")
+    v2 = r._embed_query("线性规划")
+
+    assert fn.calls == 1
+    assert v1 is not None and v2 is not None
+
+    # 新实例（模拟 invalidate_shared_retriever 后重建）不共享缓存
+    r2 = _bare_retriever(store)
+    r2._embed_query("线性规划")
+    assert fn.calls == 2
+
+
+def test_mmr_skips_query_embedding_without_doc_embeddings(monkeypatch):
+    """无文档向量时 MMR 走 bigram 兜底，query embedding 算了也白算 → 不算。"""
+    r = _bare_retriever(_RaisingStore())  # .get 抛异常 → 文档向量 None
+
+    calls = {"n": 0}
+
+    def _counting_embed(query, ttl=300.0):
+        calls["n"] += 1
+        return None
+
+    monkeypatch.setattr(r, "_embed_query", _counting_embed)
+    r._mmr_rerank(
+        "查询",
+        [(_doc("a", "线性规划"), 0.9), (_doc("b", "整数规划"), 0.8)],
+        k=1,
+    )
+    assert calls["n"] == 0
+
+
+def test_mmr_computes_query_embedding_with_doc_embeddings(monkeypatch):
+    """有文档向量时 query 向量正常参与（相关性修正路径不回归）。"""
+    store = _FakeVectorStore(
+        embeddings={"a": [1.0, 0.0], "b": [0.9, 0.1]},
+        query_vec=[1.0, 0.0],
+    )
+    r = _bare_retriever(store)
+    calls = {"n": 0}
+    orig = HybridRetriever._embed_query
+
+    def _counting(self, query, ttl=300.0):
+        calls["n"] += 1
+        return orig(self, query, ttl)
+
+    monkeypatch.setattr(HybridRetriever, "_embed_query", _counting)
+    docs = r._mmr_rerank(
+        "查询",
+        [(_doc("a", "线性规划"), 0.9), (_doc("b", "整数规划"), 0.8)],
+        k=1,
+    )
+    assert calls["n"] == 1
+    assert len(docs) == 1
+
+
 # ── 直接以脚本运行时自执行全部 test_* ────────────────────────────────
 
 if __name__ == "__main__":

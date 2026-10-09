@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from pathlib import Path
 from typing import ClassVar
 
@@ -38,6 +39,9 @@ class HybridRetriever(BaseRetriever):
     _bm25: BM25Okapi | None = None
     _bm25_docs: list[Document] = []
     _bm25_tokens: list[list[str]] = []
+    # query → (monotonic_ts, embedding)：实例级 TTL 缓存，随实例重建自动失效
+    # （嵌入函数在实例生命周期内固定，不存在换 Key 后串味）
+    _query_embeddings: dict = {}
 
     def __init__(
         self,
@@ -239,13 +243,21 @@ class HybridRetriever(BaseRetriever):
         纯函数内自动退化为字符 bigram 重叠（对中文更友好）。
         """
         docs = [d for d, _ in scored_docs]
+        doc_embeddings = self._fetch_doc_embeddings(docs)
+        # query 向量只在有文档向量时被 MMR 使用（见 ranking.mmr_rerank：
+        # 拿不到文档向量就走字符 bigram 兜底，query_embedding 根本不参与）。
+        # 所以文档向量缺失时算 query embedding 是纯浪费——默认 embedding 走
+        # OpenAI 兼容 API，那是一次真实的延迟与费用。
+        query_embedding = (
+            self._embed_query(query) if doc_embeddings is not None else None
+        )
         return mmr_rerank(
             query,
             scored_docs,
             k=k,
             lam=lam,
-            doc_embeddings=self._fetch_doc_embeddings(docs),
-            query_embedding=self._embed_query(query),
+            doc_embeddings=doc_embeddings,
+            query_embedding=query_embedding,
         )
 
     def _fetch_doc_embeddings(self, docs: list[Document]) -> np.ndarray | None:
@@ -263,18 +275,44 @@ class HybridRetriever(BaseRetriever):
         except Exception:
             return None
 
-    def _embed_query(self, query: str) -> np.ndarray | None:
-        """用 vector store 的 embedding function 嵌入 query；不可用返回 None。"""
+    def _embed_query(self, query: str, ttl: float = 300.0) -> np.ndarray | None:
+        """用 vector store 的 embedding function 嵌入 query；不可用返回 None。
+
+        带实例级 TTL 缓存：同一查询会经 pipeline / chat 工具 / 搜索接口多条
+        路径重复 embed（默认 embedding 走 OpenAI 兼容 API，是真实延迟与费用）。
+        缓存随实例重建（invalidate_shared_retriever）自动失效——嵌入函数在
+        实例生命周期内固定，不存在换 Key 后的串味问题。
+        """
+        cache = getattr(self, "_query_embeddings", None)
+        if cache is None:  # object.__new__ 构造的测试实例没有私有槽位
+            cache = {}
+            try:
+                object.__setattr__(self, "_query_embeddings", cache)
+            except Exception:
+                cache = None  # 极端环境退化为不缓存
+        if cache is not None:
+            hit = cache.get(query)
+            if hit is not None:
+                ts, emb = hit
+                if time.monotonic() - ts <= ttl:
+                    return emb
         try:
             if not query:
                 return None
             vs = self.vector_store
-            fn = getattr(vs, "_embedding_function", None) or getattr(vs, "embedding_function", None)
+            fn = getattr(vs, "_embedding_function", None) or getattr(
+                vs, "embedding_function", None
+            )
             if fn is None:
                 return None
-            return np.asarray(fn.embed_query(query), dtype=np.float64)
+            emb = np.asarray(fn.embed_query(query), dtype=np.float64)
         except Exception:
             return None
+        if cache is not None:
+            if len(cache) >= 64:  # 简易容量上限，防无限增长
+                cache.clear()
+            cache[query] = (time.monotonic(), emb)
+        return emb
 
     @staticmethod
     def _normalize_chroma_score(distance: float) -> float:

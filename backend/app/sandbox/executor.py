@@ -680,7 +680,9 @@ class SandboxExecutor:
         """包装用户代码：阻断网络 + 按需导入 + 自动捕获 matplotlib 输出。
 
         不再预导入 numpy/scipy/pandas —— LLM 生成的代码自带 import，预导入浪费
-        200-500MB 内存每个沙箱进程。matplotlib 仅设置 backend（轻量），pyplot 按需导入。
+        200-500MB 内存每个沙箱进程。matplotlib 也改为按需配置（meta_path hook：
+        用户代码第一次 import matplotlib 时才设 Agg + 中文字体 + savefig 跟踪），
+        纯计算代码不再为画图能力白付约 1s 启动开销。
         """
         return f"""
 # ── 网络阻断：禁止任何 socket 连接（connect + connect_ex 双拦）──
@@ -698,38 +700,74 @@ del _socket, _original_connect, _original_connect_ex
 import sys as _sys
 import os as _os
 
-# 必须在任何 pyplot import 之前设置 Agg backend（仅配置，不加载 pyplot）
-import matplotlib as _mpl
-_mpl.use("Agg")
+# ── matplotlib 按需配置（deferred）──
+# 旧实现预热 import matplotlib + 扫系统字体，每次沙箱执行固定多付约 1s，
+# 纯计算代码（不画图）也照付；更糟的是超时预算被启动开销吃掉——timeout=2
+# 的回归测试会在用户代码 print 之前就把进程杀掉，partial stdout 丢失
+# （test_subprocess_timeout_returns_partial_stdout 的 flaky 根因）。
+# 改为：用户代码第一次 import matplotlib 时才配 Agg + 中文字体 + savefig 跟踪。
+from importlib.abc import MetaPathFinder as _MetaPathFinder
 
-# ── 中文字体自动配置：按可用性选择 CJK 字体，图表中文不再变豆腐块 ──
-try:
-    import matplotlib.font_manager as _fm
-    _candidates = [
-        "Noto Sans CJK SC", "Microsoft YaHei", "SimHei",
-        "PingFang SC", "WenQuanYi Micro Hei", "Source Han Sans SC",
-    ]
-    _available = {{_f.name for _f in _fm.fontManager.ttflist}}
-    for _c in _candidates:
-        if _c in _available:
-            _mpl.rcParams["font.sans-serif"] = [_c] + list(_mpl.rcParams["font.sans-serif"])
-            break
-    _mpl.rcParams["axes.unicode_minus"] = False
-    del _fm
-except Exception:
-    pass
+_saved_figs = set()
+_mpl_ready = False
+
+
+def _configure_matplotlib():
+    global _mpl_ready
+    if _mpl_ready:
+        return
+    _mpl_ready = True  # 先置位再 import，防 find_spec 重入
+    try:
+        import matplotlib as _mpl
+
+        _mpl.use("Agg")  # 必须在任何 pyplot import 之前
+        try:
+            import matplotlib.font_manager as _fm
+
+            _candidates = [
+                "Noto Sans CJK SC", "Microsoft YaHei", "SimHei",
+                "PingFang SC", "WenQuanYi Micro Hei", "Source Han Sans SC",
+            ]
+            _available = {{_f.name for _f in _fm.fontManager.ttflist}}
+            for _c in _candidates:
+                if _c in _available:
+                    _mpl.rcParams["font.sans-serif"] = [_c] + list(
+                        _mpl.rcParams["font.sans-serif"]
+                    )
+                    break
+            _mpl.rcParams["axes.unicode_minus"] = False
+            del _fm
+        except Exception:
+            pass
+        # savefig 跟踪：自动保存时跳过用户已手动保存的图（避免同图落盘两份）
+        import matplotlib.figure as _mfig
+
+        _orig_savefig = _mfig.Figure.savefig
+
+        def _tracked_savefig(self, *args, **kwargs):
+            _saved_figs.add(id(self))
+            return _orig_savefig(self, *args, **kwargs)
+
+        _mfig.Figure.savefig = _tracked_savefig
+    except Exception:
+        pass
+
+
+class _DeferMatplotlib(_MetaPathFinder):
+    # 只拦 matplotlib.pyplot：import 系统保证触发子模块查找时父包已完整导入，
+    # 此时配置 Agg/字体/savefig 安全。若在 find_spec("matplotlib") 里 import
+    # matplotlib，拿到的是半初始化模块（use 未定义），pyplot 后续会炸
+    # AttributeError: module 'matplotlib' has no attribute 'artist'。
+    # 返回 None 让常规 finder 继续正常导入。
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "matplotlib.pyplot":
+            _configure_matplotlib()
+        return None
+
+
+_sys.meta_path.insert(0, _DeferMatplotlib())
 
 _os.chdir({json.dumps(output_dir)})
-
-# ── 记录用户手动 savefig 过的 figure（自动保存时跳过，避免同图落盘两份——
-#    手动保存与自动保存只是 dpi/bbox 不同，内容 MD5 去重会失效）──
-import matplotlib.figure as _mfig
-_orig_savefig = _mfig.Figure.savefig
-_saved_figs = set()
-def _tracked_savefig(self, *args, **kwargs):
-    _saved_figs.add(id(self))
-    return _orig_savefig(self, *args, **kwargs)
-_mfig.Figure.savefig = _tracked_savefig
 
 # ── 用户代码（LLM 自行 import 所需库）──
 {code}

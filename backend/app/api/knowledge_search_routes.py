@@ -68,16 +68,25 @@ async def kb_search(
     try:
         retriever = _get_retriever()
         metadata_filter = {"type": type} if type else None
-        # /search 为交互式高精度路径：显式开启 query expansion 与 LLM rerank
-        # （低延迟路径如 pipeline/RAG chat 走 retriever 默认的保守配置，二者解耦）。
-        docs = retriever._get_relevant_documents(
-            q,
-            metadata_filter=metadata_filter,
-            problem_type=problem_type,
-            k=k,
-            use_query_expansion=True,
-            use_reranker=True,
-        )
+        # 结果缓存：该路径单次查询约 3 次额外 LLM 调用（expansion + HyDE + rerank），
+        # 重复查询命中缓存直接跳过整条检索链；内容变更时 invalidate_shared_retriever
+        # 会清空缓存，不会返回陈旧结果。
+        from ..knowledge.search_cache import get_cached_docs, set_cached_docs
+
+        cache_key = (q, type or "", problem_type or "", k)
+        docs = get_cached_docs(cache_key)
+        if docs is None:
+            # /search 为交互式高精度路径：显式开启 query expansion 与 LLM rerank
+            # （低延迟路径如 pipeline/RAG chat 走 retriever 默认的保守配置，二者解耦）。
+            docs = retriever._get_relevant_documents(
+                q,
+                metadata_filter=metadata_filter,
+                problem_type=problem_type,
+                k=k,
+                use_query_expansion=True,
+                use_reranker=True,
+            )
+            set_cached_docs(cache_key, docs)
 
         results = []
         for doc in docs:

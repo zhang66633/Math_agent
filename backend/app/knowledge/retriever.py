@@ -789,7 +789,14 @@ def get_shared_retriever() -> HybridRetriever:
 
 
 def invalidate_shared_retriever() -> None:
-    """失效共享单例并清空 loader 解析缓存（reindex/import 后调用）。"""
+    """失效共享单例并清空 loader 解析缓存（reindex/import 后调用）。
+
+    同时清空搜索接口的结果缓存——否则内容已更新、/api/knowledge/search
+    还会返回旧的缓存结果（TTL 最长 120s）。
+    """
     global _shared_retriever
     _shared_retriever = None
     invalidate_kb_cache()
+    from .search_cache import clear_search_cache
+
+    clear_search_cache()

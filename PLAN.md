@@ -3,19 +3,20 @@
 > ⚠️ **蓝图说明**：`docs/archive/ARCHITECTURE.md` 为早期废弃方案（Next.js + MUI），**一律不作参考**，以本文档为准。
 > 版本: v0.4 | 日期: 2026-07-23 | 项目目录: `math_agent/`（原 NB_project 已并入，GitHub 远程 `zhang66633/NB_project`）
 >
-> ### 📌 当前进度对齐（2026-07-23 审查快照）
+> ### 📌 当前进度对齐（2026-09 校正快照；此前 2026-07-23 快照的 agent 数与页面清单已与实际脱节）
 > | 维度 | 状态 | 说明 |
 > |------|------|------|
-> | 后端核心编排 `workflow.py` | ✅ 完成 | 5 阶段 StateGraph + 状态机 + WS 推送 |
-> | 5 阶段 Agent 节点 `nodes.py` | ✅ 完成 | 真实 LLM 调用（classify/retrieve/model/solve/verify+write） |
-> | 知识库 RAG（代码） | ✅ 就绪 | 混合检索 + Chroma + Tool 封装 + chain 均已实现 |
-> | 知识库（源数据） | ✅ P0 达标 | 20 张方法卡片 + 5 篇论文 + 3 个模板（2026-07-23 扩充） |
+> | 后端核心编排 `workflow.py` | ✅ 完成 | 11 节点 StateGraph（classify/retrieve/plan + 7 个 agent 节点 + format_response）+ WS 推送 |
+> | Agent 节点 `nodes.py` | ✅ 完成 | 真实 LLM 调用：classify / retrieve / plan / analysis / modeling / data_preprocessing / solving / verification / export_results / writing / format_response |
+> | 知识库 RAG（代码） | ✅ 就绪 | 混合检索（向量+BM25+标签→RRF→MMR→时间衰减）+ Chroma + Tool 封装 + chain 均已实现 |
+> | 知识库（源数据） | ✅ P0 达标 | 47 张方法卡片 + 16 篇论文 + 27 道真题 + 3 个模板（YAML 真源入库） |
 > | WebSocket 进度推送 | ✅ 完成 | `ws.py` 订阅 Redis 转发；`task_end`/final_response 已推送 |
-> | 前端页面 / API | ✅ 完成 | Chat / Teach / Solution / Knowledge / APIKeys / Settings / Login |
+> | 前端页面 | ✅ 完成 | 首页 / Chat / Solution / Knowledge / APIKeys / Settings / Login / 学习中心（learn + learn/:unitId）/ practice / progress |
+> | 学习系统 | ✅ 完成 | 61 个学习单元 + 183 题题库 + 掌握度追踪（BKT+艾宾浩斯衰减）+ 成就 + 技能树 |
 > | 认证 / 密钥管理 | ✅ 完成 | GitHub OAuth + `pages/apikeys` + `/api/apikeys`（支持多服务商） |
-> | 自由问答 SSE | ✅ 完成 | `/api/chat` 流式输出，支持 chat/teach 双模式 |
-> | **LLM 工具调用** | ✅ 完成 | chat/teach LLM 主动调用 KB 检索 + 数学计算（SymPy + cvxpy LP/QP/IP/SOCP） |
-> | **端到端联调** | ✅ 完成 | REST + WS + SSE 全部打通；任务 `659fbc6a` 全链路验证（9 节点全部执行），输出完整 LaTeX 论文 |
+> | 自由问答 SSE | ✅ 完成 | `/api/chat` 流式输出，chat/learning 多模式（teach 模式为 API 能力，无独立页面） |
+> | **LLM 工具调用** | ✅ 完成 | chat LLM 主动调用 KB 检索 + 数学计算（SymPy + cvxpy LP/QP/IP/SOCP）+ 联网搜索 |
+> | **端到端联调** | ✅ 完成 | REST + WS + SSE 全部打通；全链路验证输出完整 LaTeX 论文 |
 
 ---
 
@@ -25,7 +26,7 @@
 
 - **前端**: 复刻 [MathModelAgent](https://github.com/jihe520/MathModelAgent) 开源项目的前端风格（Vue 3 + shadcn-vue + Tailwind），适配我们自己的后端 API
 - **后端**: 自研 **LangChain + LangGraph** 多智能体编排 + FastAPI Web API + WebSocket 实时推送（不参考 MathModelAgent 后端架构）
-- **多智能体**: 1 个主编排器 + 5 个子智能体（分析→建模→求解→验证→写作），动态编排 + 验证回退
+- **多智能体**: 1 个主编排器 + 7 个子智能体（分析→建模→数据预处理→求解→验证→结果导出→写作），动态编排 + 验证回退
 - **双模式**: 教学模式（苏格拉底式引导）+ 方案输出模式（完整方案）
 
 ---
@@ -201,7 +202,7 @@ math_agent/
 
 ```python
 class AgentState(TypedDict):
-    messages: Annotated[List[BaseMessage], add_messages]
+    messages: Annotated[list[BaseMessage], add_messages]
     mode: Literal["teach", "execute"]
     session_id: str
 
@@ -211,64 +212,85 @@ class AgentState(TypedDict):
     problem_complexity: Literal["simple", "composite", "innovative"]
     data_dependency: Literal["theoretical", "given_data", "self_collect"]
 
-    # KB 上下文
-    kb_methods: List[dict]
-    kb_papers: List[dict]
-    kb_templates: List[dict]
+    # KB 上下文（tag 精确匹配 + 语义近邻互补）
+    kb_methods: list[dict]
+    kb_papers: list[dict]
+    kb_templates: list[dict]
+    kb_problems: list[dict]
 
     # 动态执行计划
-    execution_plan: List[str]      # ["analysis", "modeling", "solving", ...]
+    execution_plan: list[str]      # ["analysis", "modeling", "solving", ...]
     current_step_index: int
     retry_count: int
     max_retries: int
 
     # 各 Agent 输出
-    analysis_output: Optional[str]
-    model_output: Optional[str]
-    solving_output: Optional[str]
-    verification_output: Optional[str]
-    writing_output: Optional[str]
+    analysis_output: str | None
+    model_output: str | None
+    preprocessed_data: str | None  # 数据预处理节点输出
+    solving_output: str | None
+    verification_output: str | None
+    writing_output: str | None
 
     # 回退控制
-    verification_passed: Optional[bool]
-    verification_feedback: Optional[str]
-    rollback_target: Optional[str]
+    verification_passed: bool | None
+    verification_feedback: str | None
+    rollback_target: str | None
 
-    # 进度事件（WebSocket 推送用）
-    progress_events: List[dict]
+    # 用户 API Key 配置 / 题目数据附件 / 导出文件
+    api_key_config: dict | None
+    data_files: list[dict]
+    data_files_dir: str
+    export_files: list[dict] | None
+
+    # 最终输出
+    final_response: str | None
 ```
+
+> 进度事件不走 State——由 `node_helpers._pub_event` 直接发 Redis Pub/Sub（WS 推送）+ 事件日志文件。
 
 ### 图拓扑
 
 ```
 START → classify_problem → retrieve_knowledge → plan_execution
-                                                      │
-                                         Command(goto=first_agent)
-                                                      │
-                    ┌─────────────────────────────────┼─────────────────────────────┐
-                    ▼                                 ▼                             ▼
-            analysis_agent                     modeling_agent                writing_agent
-                    │                                 │                             │
-                    └────────────┬────────────────────┘─────────────────────────────┘
-                                 │
-                     每个 agent 返回 Command:
-                       → 成功: goto=next_agent (按 plan)
-                       → 验证失败: goto=rollback_target
-                       → 计划完成: goto=format_response
-                                 │
-                                 ▼
-                        format_response → END
+                                                       │
+                                    route_to_first_agent（条件边）
+                                                       │
+     ┌──────────────┬──────────────┬───────────────┼───────────────┬──────────────┬──────────────┐
+     ▼              ▼              ▼               ▼               ▼              ▼              ▼
+analysis_agent modeling_agent data_preprocessing solving_agent verification_ agent export_results writing_agent
+                                       _agent                          agent
+     │              │              │               │               │              │              │
+     └──────────────┴──────────────┴───────────────┼───────────────┴──────────────┴──────────────┘
+                                                       │
+                          after_agent_router（每个 agent 完成后的条件边）:
+                            → 按 plan 到下一个 agent
+                            → rollback_target 非空且未超重试上限: 回退一次
+                            → plan 完成: format_response
+                                                       │
+                                                       ▼
+                                              format_response → END
 ```
+
+> 路由真源：`core/router.py` 的 plan 步骤名 → 节点名映射，`workflow.py` 与
+> `after_agent_router` 共用同一张表，加 agent 只改一处。
 
 ### Tool 分配
 
-| Agent | 绑定工具 |
-|-------|---------|
-| Analysis | `search_method_cards`, `search_similar_papers`, `get_analysis_framework` |
-| Modeling | `search_method_cards`, `compare_methods`, `get_analysis_framework` |
-| Solving | `execute_python_code`, `install_package`, `generate_synthetic_data` |
-| Verification | `execute_python_code`, `search_method_cards` |
-| Writing | `search_similar_papers` |
+实际工具集（`backend/app/tools/`，共 8 个）：
+
+| 工具 | 说明 |
+|-------|------|
+| `search_method_cards` / `search_similar_papers` / `get_analysis_template` | 知识库检索（kb_tools.py，LLM bind_tools） |
+| `sympy_compute` | 符号/数值计算：求导、积分、代数/ODE 求解、极限、泰勒、矩阵（math_tools.py） |
+| `solve_optimization` | LP/QP/IP(MIP)/SOCP 求解（cvxpy，含 SymPy→cvxpy 桥接） |
+| `run_code` | 沙箱代码执行（subprocess/Docker 双后端，网络阻断 + 超时/内存限制） |
+| `ask_user` | 澄清交互（信息不足时弹出选项卡片） |
+| `web_search` | DuckDuckGo 联网搜索 |
+
+> chat 模式通过 `llm.bind_tools()` 全量挂载；solution 流水线的 solving/verification
+> 节点使用 `run_code` + 数学工具。早期计划中的 `compare_methods` /
+> `install_package` / `generate_synthetic_data` 未实现。
 
 ---
 
@@ -290,11 +312,23 @@ START → classify_problem → retrieve_knowledge → plan_execution
 | `DELETE` | `/api/apikeys/{id}` | 删除 API Key |
 | `GET` | `/api/apikeys/mine` | 获取当前激活的 Key |
 | `POST` | `/api/apikeys/quick` | 快速激活 Key |
-| `GET` | `/api/knowledge/search` | 知识库搜索 |
+| `GET` | `/api/knowledge/search` | 知识库搜索（query expansion + LLM rerank + 结果缓存） |
 | `GET` | `/api/knowledge/stats` | 知识库统计 |
 | `POST` | `/api/knowledge/reindex` | 触发重新索引 |
+| `GET` | `/api/knowledge/methods\|papers\|templates\|problems` | 知识库内容列表/详情/raw |
+| `POST` | `/api/knowledge/upload` | 上传资料（PDF/OCR/Excel/DOCX 解析 → LLM 提取） |
 | `GET` | `/api/health` | 服务健康检查 |
-| `POST` | `/api/chat` | SSE 流式对话 (chat/teach 模式，含 LLM 工具调用：KB 检索 + 数学计算) |
+| `GET` | `/api/sandbox/status` | 沙箱执行模式（docker / subprocess） |
+| `POST` | `/api/chat` | SSE 流式对话（chat/learning 多模式，含 LLM 工具调用：KB 检索 + 数学计算 + 联网搜索） |
+
+### 学习系统 / 画像 / 会话 / 导出（2026-07 后新增，共 30+ 路由）
+
+| 分组 | 路径前缀 | 说明 |
+|------|---------|------|
+| 学习 | `/api/learning/*` | 学习路径生成、单元内容、下一条推荐、题库（bank/practice/answer/mistakes） |
+| 画像 | `/api/profile/*` | 学习画像、进度统计、掌握度、成就 Ack |
+| 会话 | `/api/conversations/*` | 会话 CRUD + 消息同步（SQLite 持久化，懒加载） |
+| 导出 | `/api/export/*` | 交付物导出（Markdown / Word / Excel / CSV / ZIP） |
 
 ### WebSocket
 
@@ -317,17 +351,20 @@ START → classify_problem → retrieve_knowledge → plan_execution
 
 | 路径 | 页面 | 功能 | 状态 |
 |------|------|------|------|
-| `/` | 首页 | 模式选择（教学/方案）+ 模块入口 + 知识库统计 + API Key 快速配置 | ✅ |
+| `/` | 首页 | 模式选择 + 模块入口 + 知识库统计 + API Key 快速配置 | ✅ |
 | `/login` | 登录 | GitHub OAuth 登录 | ✅ |
 | `/auth/callback` | OAuth 回调 | 处理 GitHub 授权码，获取用户信息 | ✅ |
-| `/chat` | 自由问答 | SSE 流式对话，支持多轮上下文 | ✅ |
-| `/teach` | 教学模式 | SSE 流式，苏格拉底式引导提问 | ✅ |
-| `/solution` | 方案模式 | WebSocket 实时显示 agent 执行进度 | ✅ |
-| `/example/:id` | 例题详情 | 浏览示例与解析 | 🟡 占位 |
-| `/archive/:id` | 历史归档 | 查看历史任务详情 | 🟡 占位 |
-| `/knowledge` | 知识库 | 方法卡片/论文/模板的 CRUD + 搜索 + 浏览 | ✅ |
+| `/chat` | 自由问答 | SSE 流式对话，支持多轮上下文 + 工具调用 | ✅ |
+| `/solution` | 方案模式 | WebSocket 实时显示 agent 执行进度 + 论文工作台 | ✅ |
+| `/knowledge` | 知识库 | 方法卡片/论文/模板/真题的 CRUD + 搜索 + 浏览 + 导入 | ✅ |
 | `/apikeys` | API Key 管理 | 多服务商支持，含预设配置和自定义 | ✅ |
-| `/settings` | 设置 | 用户偏好设置 | 🟡 占位 |
+| `/settings` | 设置 | 用户偏好设置 | ✅ |
+| `/learn` | 学习工位 | 技能树导航 + 智能体对话式讲解（61 个学习单元） | ✅ |
+| `/learn/:unitId` | 学习单元 | Markdown 文档（划词→问AI）+ 目录 + AI 助手 + 单元自测 | ✅ |
+| `/practice` | 训练场 | 183 道选择题题库 + 错题本 + AI 侧边答疑 | ✅ |
+| `/progress` | 成长档案 | 学习统计、热力图、成就勋章、待复习提醒 | ✅ |
+
+> 说明：早期计划的 `/teach`（教学模式）、`/example/:id`（例题）、`/archive/:id`（历史归档）三个页面**从未实现或已废弃**——teach 模式是 `/api/chat` 的 mode 参数能力；example 页面无后端接口支撑，已于 2026-09 作为死代码删除（git 历史可查）；历史归档由侧边栏会话列表承担。
 
 ---
 
@@ -425,8 +462,8 @@ START → classify_problem → retrieve_knowledge → plan_execution
 | 前端 UI | shadcn-vue + Tailwind（非 Element Plus） | 与源项目一致，现代设计，Tree-shaking 好 |
 | 前端包管理 | pnpm | 与源项目一致 |
 | 后端 | LangGraph + FastAPI（自主设计） | 动态编排+回退远优于源项目的顺序调用 |
-| 路由方式 | LangGraph Command API | 路由+状态更新一体化，比条件边更简洁 |
-| Agent 数量 | 5 个 + Orchestrator（源项目只有 4 个） | 多了验证 Agent，支持回退循环 |
+| 路由方式 | 条件边 + plan 驱动的节点映射（`core/router.py` 单一真源） | 加 agent 只改一处；Command API 在 7 节点规模下条件边更直读 |
+| Agent 数量 | 7 个 + 编排节点（classify/retrieve/plan/format） | 分析→建模→数据预处理→求解→验证→结果导出→写作；验证失败可回退一次 |
 | WebSocket | Redis Pub/Sub 解耦 | 匹配前端 TaskWebSocket；支持水平扩展 |
 | 代码沙箱 | subprocess → Docker | 渐进式策略 |
 | 启动方式 | `python start.py`（install/start/stop 子命令，跨平台） | 单入口消除三套操作系统脚本的逻辑漂移 |

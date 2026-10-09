@@ -119,3 +119,38 @@ flowchart TD
 - `git status`：干净，无未提交改动。
 - `git ls-files`：607 文件；无 `.log`/二进制/`node_modules`/`data/` 入库（仓库卫生良好）。
 - LLM 调用点 16 处全部经 `LLMFactory`，无重复封装。
+
+---
+
+## 六、执行记录（2026-09，审查后按顺序实施完成）
+
+13 个提交，每步独立验证（pytest / ruff / vue-tsc / biome 全绿后提交）。
+
+### 优化项 ①–⑥（性能与正确性）
+
+| # | 提交 | 内容 | 实测效果 |
+|---|------|------|---------|
+| ① | `d8813ee` | kb_tools.get_retriever 复用共享单例，修掉 import 后 chat 路径 BM25 不失效的 bug；顺带发现并修 `.gitignore` 裸 `tools/` 误伤 `backend/app/tools/`（`ce5dca0`） | 双份 BM25/Chroma → 单份；新卡片即时可见 |
+| ② | `b50d1ea` | 会话同步改懒加载：只预载最近 3 个会话消息，切换时按需拉 | 进页面最坏 240+ 串行请求 → 4 模式各 4 个并行 |
+| ③ | `6f089fc` | `/api/knowledge/search` 加 LRU+TTL 结果缓存，挂到 invalidate 钩子 | 重复查询跳过 3 次 LLM 调用 |
+| ④ | `80461ec` | MMR 按需算 query 向量；`_embed_query` 实例级 TTL 缓存 | 无文档向量时省 1 次 embedding API 调用 |
+| ⑤ | `52abe3f` | 检索链路 6 处静默 `except: pass` 改 logger.warning | 「搜不到」可区分「真没有」与「检索坏了」 |
+| ⑥ | `9ffa175` | 沙箱包装器 matplotlib 改按需配置（meta_path hook 只拦 pyplot） | 每次执行 1.1–1.4s → 0.39s；flaky 测试连跑 5 次全过 |
+
+### 方案 A（文档与入口统一）
+
+- `757f8c2`：根目录 13 md → 3 权威 + `docs/`（现行 5 篇 + archive 6 篇 + 索引）；启停 6 脚本 → `start.py`（install/start/stop 子命令，跨平台）+ `start.bat` 纯 ASCII 转发器；合并时对齐了两份旧安装脚本的 `.env` 替换差异。
+- `8254f10`：删除死页面 `example/[id].vue`（218 行、无路由无接口）；PLAN.md 全面校正（5→7 agent、图拓扑、AgentState、Tool 表、页面清单、API 表）。
+
+### 方案 B（结构收敛）
+
+- `d004dbc`：node_map 3 份手抄 + 节点清单 2 份 → `AGENT_NODES` 单一真源 + 不变量测试。
+- `1b88977`：`nodes.py` 1900 行 → 505 行，7 个 agent 节点拆到 `core/agents/`（79–409 行/文件），import 路径全兼容。
+- `1921cec`：三个 SQLite store 的连接样板收敛到 `services/storage.py` 的 `SqliteRepo` 基类（含 `_migrate`/`_post_init` 钩子与共用 `utcnow`）。
+- `60993ab`：270 行文件解析器外移到 `services/document_parsers.py`，search 路由文件 1224 → 820 行，18 路由行为不变。
+
+### 最终状态
+
+- 后端 82 py / ~15.5k 行 → 89 py / ~16k 行（新增 4 个测试文件 + 3 个服务/agents 模块，测试 18 → 21 个文件全过）
+- 测试：**21 个测试文件全部通过**（新增 13 个回归测试锁死本轮改动）；ruff / vue-tsc / biome 全绿
+- 遗留（明确不做）：方案 C（学习单元与方法卡片内容模型合并）需先定「卡片即单元 vs 单元即卡片」，建议单独评估；WorkingMemory/EpisodicMemory 为文件检查点式存储，与 SQLite store 生命周期不同，维持现状

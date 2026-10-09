@@ -152,5 +152,19 @@ flowchart TD
 ### 最终状态
 
 - 后端 82 py / ~15.5k 行 → 89 py / ~16k 行（新增 4 个测试文件 + 3 个服务/agents 模块，测试 18 → 21 个文件全过）
-- 测试：**21 个测试文件全部通过**（新增 13 个回归测试锁死本轮改动）；ruff / vue-tsc / biome 全绿
+- 测试：**22 个测试文件全部通过**（新增 19 个回归测试锁死本轮改动）；ruff / vue-tsc / biome 全绿
 - 遗留（明确不做）：方案 C（学习单元与方法卡片内容模型合并）需先定「卡片即单元 vs 单元即卡片」，建议单独评估；WorkingMemory/EpisodicMemory 为文件检查点式存储，与 SQLite store 生命周期不同，维持现状
+
+### 追加实施（2026-09 晚，真机验证通过后）
+
+- **真机验证**：后端+前端实测全链路——搜索缓存 10.7s→5ms、会话懒加载、中文 UTF-8
+  字节级往返、Vite 代理；发现并排除一个显示层误报（PowerShell 控制台编码）。
+  唯一外部阻塞是失效的 API Key（用户已更新并确认功能测试通过）。
+- `79e15e2` 依赖瘦身：核心 36→33，OCR/搜索降 extras（pytesseract/pdf2image 为死依赖移除，
+  PyPDF2 补声明）；start.py / CI / README 同步。
+- `14bb097` 提取流水线外移：`services/knowledge_ingest.py`（run_extraction + prompts +
+  job store 访问器），`knowledge/kb_files.py`（4 个 KB 文件助手从 api 层下沉）；
+  search 路由文件 1224 → 433 行；新增 6 个回归测试。
+- `54553b9` 方案 C 设计对比文档（待拍板）：三个方向 + 三个决策点 + 工作量预估，
+  见 [plan-c-content-merge.md](./plan-c-content-merge.md)。
+- 遗留：docker-compose 两份合并需 Docker 环境验证（本机无 Docker），不做盲改。

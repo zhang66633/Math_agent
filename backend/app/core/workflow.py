@@ -42,8 +42,19 @@ from .nodes import (
     verification_agent_node,
     writing_agent_node,
 )
-from .router import after_agent_router, route_to_first_agent
+from .router import AGENT_NODES, after_agent_router, route_to_first_agent
 from .state import AgentState
+
+# 节点函数注册表：节点名 → 函数（与 AGENT_NODES 的节点名一一对应）
+_AGENT_NODE_FNS = {
+    "analysis_agent": analysis_agent_node,
+    "modeling_agent": modeling_agent_node,
+    "data_preprocessing_agent": data_preprocessing_agent_node,
+    "solving_agent": solving_agent_node,
+    "verification_agent": verification_agent_node,
+    "export_results_agent": export_results_agent_node,
+    "writing_agent": writing_agent_node,
+}
 
 
 def build_orchestrator() -> StateGraph:
@@ -56,14 +67,9 @@ def build_orchestrator() -> StateGraph:
     workflow.add_node("retrieve_knowledge", retrieve_knowledge)
     workflow.add_node("plan_execution", plan_execution)
 
-    # ---- Agent 节点 ----
-    workflow.add_node("analysis_agent", analysis_agent_node)
-    workflow.add_node("modeling_agent", modeling_agent_node)
-    workflow.add_node("data_preprocessing_agent", data_preprocessing_agent_node)
-    workflow.add_node("solving_agent", solving_agent_node)
-    workflow.add_node("verification_agent", verification_agent_node)
-    workflow.add_node("export_results_agent", export_results_agent_node)
-    workflow.add_node("writing_agent", writing_agent_node)
+    # ---- Agent 节点（按 AGENT_NODES 单一真源注册）----
+    for node_name, fn in _AGENT_NODE_FNS.items():
+        workflow.add_node(node_name, fn)
 
     # ---- 格式化输出 ----
     workflow.add_node("format_response", format_response)
@@ -74,46 +80,21 @@ def build_orchestrator() -> StateGraph:
     workflow.add_edge("retrieve_knowledge", "plan_execution")
 
     # ---- 动态路由：planner → 第一个 agent ----
+    # 条件边映射同样从 AGENT_NODES 派生（目标含 format_response）
+    _route_map = {node: node for node in AGENT_NODES.values()}
+    _route_map["format_response"] = "format_response"
     workflow.add_conditional_edges(
         "plan_execution",
         route_to_first_agent,
-        {
-            "analysis_agent": "analysis_agent",
-            "modeling_agent": "modeling_agent",
-            "data_preprocessing_agent": "data_preprocessing_agent",
-            "solving_agent": "solving_agent",
-            "verification_agent": "verification_agent",
-            "export_results_agent": "export_results_agent",
-            "writing_agent": "writing_agent",
-            "format_response": "format_response",
-        },
+        _route_map,
     )
 
     # ---- 动态路由：每个 agent 完成后 → 下一步 ----
-    agent_nodes = [
-        "analysis_agent",
-        "modeling_agent",
-        "data_preprocessing_agent",
-        "solving_agent",
-        "verification_agent",
-        "export_results_agent",
-        "writing_agent",
-    ]
-
-    for node_name in agent_nodes:
+    for node_name in AGENT_NODES.values():
         workflow.add_conditional_edges(
             node_name,
             after_agent_router,
-            {
-                "analysis_agent": "analysis_agent",
-                "modeling_agent": "modeling_agent",
-                "data_preprocessing_agent": "data_preprocessing_agent",
-                "solving_agent": "solving_agent",
-                "verification_agent": "verification_agent",
-                "export_results_agent": "export_results_agent",
-                "writing_agent": "writing_agent",
-                "format_response": "format_response",
-            },
+            _route_map,
         )
 
     # ---- 格式化后结束 ----

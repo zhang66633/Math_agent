@@ -86,6 +86,36 @@ def test_full_fail_cycle():
     assert after_agent_router(s) == "verification_agent"
 
 
+def test_agent_nodes_single_source_of_truth():
+    """AGENT_NODES 是 plan 步骤名 → 图节点名的唯一真源（B-1 收敛）。
+
+    此前 router.py 手抄 3 份 node_map、workflow.py 手抄 2 份节点清单，
+    加 agent 要改 5 处、漏改一处就漂移。现在共用这一张表。
+    """
+    from app.core.router import AGENT_NODES
+    from app.core.workflow import _AGENT_NODE_FNS, build_orchestrator
+
+    # 7 个 plan 步骤 → 7 个互不重复的图节点
+    assert len(AGENT_NODES) == 7
+    assert len(set(AGENT_NODES.values())) == 7
+    assert all(v.endswith("_agent") for v in AGENT_NODES.values())
+
+    # workflow 的节点函数注册表与 AGENT_NODES 完全一致
+    assert set(_AGENT_NODE_FNS) == set(AGENT_NODES.values())
+
+    # 编译出的图确实包含全部 agent 节点 + 编排节点
+    graph = build_orchestrator()
+    node_names = set(graph.get_graph().nodes)
+    for expected in [
+        *AGENT_NODES.values(),
+        "classify_problem",
+        "retrieve_knowledge",
+        "plan_execution",
+        "format_response",
+    ]:
+        assert expected in node_names, f"图缺少节点: {expected}"
+
+
 if __name__ == "__main__":
     # 简单脚本运行器：逐个执行以 test_ 开头的函数，兼容无 pytest 环境
     fns = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]

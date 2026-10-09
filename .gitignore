@@ -70,6 +70,7 @@ backend/_start.bat
 # ��Ŀ���⻷��
 .venv/
 
-tools/
+# 项目级工具目录（仅根目录，勿用裸 tools/——那会连带忽略 backend/app/tools/ 的新文件）
+/tools/
 
 !.env.production.example

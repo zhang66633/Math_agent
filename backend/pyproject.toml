@@ -26,7 +26,6 @@ dependencies = [
     "httpx>=0.28.0",
     "python-multipart>=0.0.9",
     "rank-bm25>=0.2.2",
-    "duckduckgo-search>=6.0.0",
     "sympy>=1.12",
     "cvxpy>=1.4.0",
     "numpy>=1.24.0",
@@ -38,17 +37,26 @@ dependencies = [
     "seaborn>=0.13.0",
     "python-docx>=1.0.0",
     "pdfplumber>=0.10.0",
-    "pymupdf>=1.24.0",
-    # rapidocr 1.3.0/1.4.4 的 requires_python 分别为 <3.12 / <3.13，3.13 可用最新只有 1.2.3；
-    # opencv-python 无 win cp314 wheel，3.14 跳过该依赖（代码侧惰性 import，缺失时提示安装即可）
-    "rapidocr_onnxruntime>=1.2.3; python_version < '3.14'",
-    "pytesseract>=0.3.10",
-    "pdf2image>=1.17.0",
     "click>=8.0.0",
     "psutil>=5.9.0",
 ]
 
+# 可选能力（代码侧全部惰性 import，缺失时功能降级并给出安装提示）：
+#   ocr    — 扫描版 PDF OCR（rapidocr）与 PDF 页渲染（pymupdf）、PyPDF2 兜底解析
+#   search — DuckDuckGo 联网搜索工具
+# 一键安装默认带上：pip install -e "backend[ocr,search]"
+# 已移除的死依赖：pytesseract / pdf2image（代码改走 rapidocr+pymupdf 后无人 import）
 [project.optional-dependencies]
+ocr = [
+    "pymupdf>=1.24.0",
+    # rapidocr 1.3.0/1.4.4 的 requires_python 分别为 <3.12 / <3.13，3.13 可用最新只有 1.2.3；
+    # opencv-python 无 win cp314 wheel，3.14 跳过该依赖（代码侧惰性 import，缺失时提示安装即可）
+    "rapidocr_onnxruntime>=1.2.3; python_version < '3.14'",
+    "PyPDF2>=3.0.0",
+]
+search = [
+    "duckduckgo-search>=6.0.0",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",

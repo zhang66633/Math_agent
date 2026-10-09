@@ -51,7 +51,7 @@ python3 start.py           # Linux / macOS；stop 用 python start.py stop
 ```bash
 cd backend
 cp .env.example .env           # 可选；建议把 JWT_SECRET 改为随机值
-python -m venv .venv && .venv/bin/pip install -e .
+python -m venv .venv && .venv/bin/pip install -e ".[ocr,search]"   # ocr/search 为可选能力（扫描 PDF OCR、联网搜索），核心功能不含它们
 .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8002
 
 cd ../frontend

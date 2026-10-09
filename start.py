@@ -119,7 +119,12 @@ def cmd_install(use_docker: bool) -> None:
         stderr=subprocess.DEVNULL,
         check=False,
     )
-    run([py, "-m", "pip", "install", "-e", "backend"], "后端依赖安装失败,请检查网络后重试")
+    # ocr/search 为可选能力 extras（代码侧惰性 import，缺失时降级并提示安装）；
+    # 一键安装默认带上，保持与旧版「全量安装」一致的行为
+    run(
+        [py, "-m", "pip", "install", "-e", "backend[ocr,search]"],
+        "后端依赖安装失败,请检查网络后重试",
+    )
 
     # ── 4. 生成 .env ──
     env_file = BACKEND_DIR / ".env"

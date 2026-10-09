@@ -21,7 +21,7 @@ jobs:
       - name: Install backend
         run: |
           pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -e ".[dev,ocr,search]"
       - name: Lint (ruff)
         run: ruff check app tests
       - name: Run tests

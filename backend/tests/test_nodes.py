@@ -12,6 +12,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from langchain_core.messages import AIMessage  # noqa: E402
 
 import app.core.nodes as nodes  # noqa: E402
+from app.core.agents import (  # noqa: E402
+    analysis,
+    data_preprocessing,
+    export_results,
+    modeling,
+    solving,
+    verification,
+    writing,
+)
 from app.core.node_helpers import (  # noqa: E402
     _clean_md,
     _extract_code_block,
@@ -19,7 +28,20 @@ from app.core.node_helpers import (  # noqa: E402
     _next_step,
 )
 
-# ── 桩：替代真实 LLM 调用（nodes 命名空间内 get_llm 被替换）──
+# ── 桩：替代真实 LLM 调用 ─────────────────────────────────────────
+# agent 节点实现拆到 core/agents/<agent>.py 后，各模块命名空间各自持有
+# get_llm 引用（from ..llm.factory import get_llm）——打桩必须覆盖所有
+# 持有该引用的模块，否则拆分布局会让桩静默失效。
+_LLM_MODULES = [
+    nodes,
+    analysis,
+    modeling,
+    solving,
+    verification,
+    writing,
+    data_preprocessing,
+    export_results,
+]
 
 
 class _FakeLLM:
@@ -38,7 +60,9 @@ class _FakeLLM:
 
 
 def _stub_llm(text: str):
-    nodes.get_llm = lambda role, key=None: _FakeLLM(text)
+    for module in _LLM_MODULES:
+        if hasattr(module, "get_llm"):
+            module.get_llm = lambda role, key=None: _FakeLLM(text)
 
 
 def _base_state(**overrides) -> dict:

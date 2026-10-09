@@ -78,8 +78,10 @@ ignore = ["E501", "B008", "B904"]
 # main.py 必须先 load_dotenv 再导入 config/路由（显式 .env 加载）
 "app/main.py" = ["E402"]
 # router.py auth 内联路由在 api_router 装配后定义；tasks.py/indexer.py 局部导入规避循环依赖
+# nodes.py 底部是 core/agents/* 的再导出（拆分布局后保持 app.core.nodes import 路径兼容）
 "app/api/router.py" = ["E402"]
 "app/api/tasks.py" = ["E402"]
+"app/core/nodes.py" = ["E402"]
 "app/knowledge/indexer.py" = ["E402"]
 
 [build-system]

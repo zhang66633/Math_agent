@@ -1,12 +1,19 @@
-"""知识库路由共享层 — Pydantic 模型 + 检索/文件辅助函数（god-files 拆分 #31）。"""
+"""知识库路由共享层 — Pydantic 响应模型 + 路由辅助函数（god-files 拆分 #31）。
 
-import re
+KB 文件系统助手已移到 knowledge/kb_files.py（services 需要且不应反向 import
+api 模块），此处再导出保持既有路由 import 不变。
+"""
+
 from pathlib import Path
 
-import yaml
 from pydantic import BaseModel
 
-from ..config import get_settings
+from ..knowledge.kb_files import (  # noqa: F401  (再导出供路由 import)
+    _find_yaml_file,
+    _get_embedder,
+    _get_loader,
+    _next_id,
+)
 
 # ── response models ────────────────────────────────────────────────────
 
@@ -153,19 +160,7 @@ class KnowledgeUploadJob(BaseModel):
     error: str | None = None
 
 
-# ── in-memory job store (upload extraction) ────────────────────────
-
-_extraction_jobs: dict[str, dict] = {}
-
-
 # ── helpers ─────────────────────────────────────────────────────────
-
-
-def _get_loader():
-    settings = get_settings()
-    from ..knowledge.loader import KnowledgeBaseLoader
-
-    return KnowledgeBaseLoader(settings.kb_root)
 
 
 def _get_retriever():
@@ -173,17 +168,6 @@ def _get_retriever():
     from ..knowledge.retriever import get_shared_retriever
 
     return get_shared_retriever()
-
-
-def _get_embedder(user_id: str | None = None):
-    settings = get_settings()
-    from ..knowledge.embedder import KBEmbedder
-
-    return KBEmbedder(
-        kb_root=settings.kb_root,
-        persist_dir=settings.chroma_dir,
-        user_id=user_id,
-    )
 
 
 def _sync_kb_index(
@@ -206,80 +190,6 @@ def _sync_kb_index(
     if add_path is not None:
         embedder.add_document(add_path)
     return "vector"
-
-
-def _find_yaml_file(kb_type: str, entry_id: str) -> Path | None:
-    """Scan knowledge_base/{subdir}/**/*.yaml for the file with matching id."""
-    settings = get_settings()
-    subdir_map = {
-        "method": "methods",
-        "paper": "papers",
-        "template": "templates",
-        "problem": "problems",
-    }
-    key_map = {
-        "method": "method_card",
-        "paper": "paper",
-        "template": "template",
-        "problem": "problem",
-    }
-    subdir = subdir_map.get(kb_type, kb_type)
-    top_key = key_map.get(kb_type, "")
-    search_dir = settings.kb_root / subdir
-    if not search_dir.exists():
-        return None
-    for yf in search_dir.rglob("*.yaml"):
-        try:
-            data = yaml.safe_load(yf.read_text(encoding="utf-8"))
-            if data and top_key in data and isinstance(data[top_key], dict):
-                if data[top_key].get("id") == entry_id:
-                    return yf
-        except Exception:
-            continue
-    return None
-
-
-def _next_id(kb_type: str) -> str:
-    """Auto-generate the next sequential ID."""
-    settings = get_settings()
-    subdir_map = {
-        "method": "methods",
-        "paper": "papers",
-        "template": "templates",
-        "problem": "problems",
-    }
-    prefix_map = {
-        "method": "mc_",
-        "paper": "paper_",
-        "template": "tpl_",
-        "problem": "prob_",
-    }
-    subdir = subdir_map.get(kb_type, kb_type)
-    prefix = prefix_map.get(kb_type, "id_")
-    search_dir = settings.kb_root / subdir
-    existing: list[int] = []
-    if search_dir.exists():
-        for yf in search_dir.rglob("*.yaml"):
-            try:
-                data = yaml.safe_load(yf.read_text(encoding="utf-8"))
-                if not data:
-                    continue
-                key_map = {
-                    "method": "method_card",
-                    "paper": "paper",
-                    "template": "template",
-                    "problem": "problem",
-                }
-                top_key = key_map.get(kb_type, "")
-                if top_key in data and isinstance(data[top_key], dict):
-                    rid = data[top_key].get("id", "")
-                    m = re.match(rf"^{re.escape(prefix)}(\d+)$", rid)
-                    if m:
-                        existing.append(int(m.group(1)))
-            except Exception:
-                continue
-    val = max(existing) + 1 if existing else 1
-    return f"{prefix}{val:03d}"
 
 
 # ── stats ───────────────────────────────────────────────────────────────

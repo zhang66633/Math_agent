@@ -1,0 +1,230 @@
+paper:
+  id: paper_025
+  year: 2020
+  competition: 研赛
+  problem_id: D
+  title: 汽油精制过程中的辛烷值损失预测及优化研究
+  tags:
+    problem_type:
+    - 预测
+    - 优化
+    - 综合评价
+    core_models:
+    - 灰色关联度分析
+    - BP神经网络
+    - 遗传算法
+    techniques:
+    - 3σ准则异常值检测
+    - 最大最小限幅法
+    - 动量BP法
+    - 实数编码遗传算法
+    - 轮盘赌选择
+    - 两点交叉
+    - 多元非均匀变异
+    - MATLAB
+  problem_ref: ''
+  problem_context: 随着环保法规日益严格，我国要求车用汽油向低硫/超低硫方向发展，国VI标准要求硫含量不超过10μg/g。S-Zorb（催化汽油吸附脱硫）技术是目前工业化应用最广的吸附脱硫技术，具有脱硫率高、辛烷值损失小的优点。然而，S-Zorb装置运行涉及367个变量（7个原料性质、2个待生吸附剂性质、2个再生吸附剂性质、2个产品性质以及354个操作变量），变量之间具有高度非线性和强耦合关系，导致工程师难以有效控制关键操作变量，过程优化响应不及时，企业成本增加。因此，需要利用数据挖掘技术，从大量操作变量中筛选出主要影响变量，建立辛烷值损失预测模型，并在保证脱硫效果（硫含量≤5μg/g）的前提下优化操作条件，使辛烷值损失最小化。具体任务包括：对285号和313号样本进行异常值检测与处理；从367个变量中筛选出不超过30个建模主要变量；建立辛烷值损失预测模型；对辛烷值损失降幅大于30%的样本进行优化操作；对133号样本展示操作变量调整过程中辛烷值和硫含量的变化轨迹。
+  methodology_chain:
+  - '数据预处理: 采用最大最小限幅法将超出操作变量范围的数据置零，再用拉依达准则（3σ）进一步剔除异常值，对每行异常值超过20个的样本整行删除，其余缺失值用前后两小时数据均值补齐'
+  - '变量筛选: 对367个变量进行均值化无量纲处理，以产成品辛烷值为参考序列，计算各变量与辛烷值的灰色关联度，筛选出关联度大于80%的30个主要变量（2个原料性质变量+28个操作变量）'
+  - '预测模型构建: 以30个变量为输入层、产成品辛烷值和含硫量为输出层，构建含动量因子的三层BP神经网络，通过对比不同隐含层节点数（45/60/90/120）和学习率（0.1/0.4/0.7/0.9）确定最优参数'
+  - '模型验证: 前300组数据为训练集，后25组为测试集，计算模拟值与真实值的误差，验证模型拟合度'
+  - '优化模型构建: 以辛烷值损失最小为目标，以硫含量≤5μg/g、辛烷值损失降幅>30%、原料及吸附剂性质不变为约束，构建单目标优化模型'
+  - '优化求解: 采用实数编码遗传算法求解，将BP神经网络嵌入遗传算法中作为适应度评估函数，通过对比实验确定种群规模50、最大迭代次数1000、交叉率0.2、变异率0.09'
+  - '优化操作: 对30组辛烷值损失降幅超30%的样本进行优化，得到各操作变量的优化值和取值范围'
+  - '可视化展示: 对133号样本，从各操作变量最小值开始以给定步长逐步调整，代入BP神经网络预测模型，绘制各变量变化对产成品辛烷值和硫含量影响的曲线图'
+  key_formulas:
+  - name: 最大最小限幅法异常值判定
+    latex: X(i,j) = \begin{cases} X(i,j) & c_{min}(j) \leq X(i,j) \leq c_{max}(j)
+      \\ 0 & \text{其他} \end{cases}
+    description: 将超出操作变量允许范围的数据置零，作为异常值标记
+  - name: 拉依达准则（3σ准则）
+    latex: \sigma(j) = \left[\frac{1}{n-1}\sum_{i=1}^{n}v_{ij}^2\right]^{1/2} = \left\{\left[\sum_{i=1}^{n}x_{ij}^2
+      - \left(\sum_{i=1}^{n}x_{ij}\right)^2/n\right]/(n-1)\right\}^{1/2}
+    description: 计算各列标准误差，当|V_ij| = |x(i,j) - \bar{X}(j)| > 3σ时判定为高度异常值
+  - name: 灰色关联系数
+    latex: r(X_0(k), X_i(k)) = \frac{\min_i\min_k|X_0(k)-X_i(k)| + \rho\max_i\max_k|X_0(k)-X_i(k)|}{|X_0(k)-X_i(k)|
+      + \rho\max_i\max_k|X_0(k)-X_i(k)|}
+    description: 计算参考序列（辛烷值）与各比较序列在第k个时间点的关联系数，ρ为分辨系数取0.5
+  - name: 灰色关联度
+    latex: r(X_0, X_i) = \frac{1}{n}\sum_{k=1}^{n}r(X_0(k), X_i(k))
+    description: 将各时间点关联系数取平均得到总体关联度，用于变量筛选
+  - name: BP神经网络隐含层输出
+    latex: hid_{output_j} = F\left(\sum_{i=1}^{I}w_{ij} \cdot x_i\right), \quad F(x)
+      = \frac{1}{1+e^{-x}}
+    description: 隐含层第j个神经元的输出，传递函数为Sigmoid函数
+  - name: 网络总误差
+    latex: e(n) = \frac{1}{2}\sum_{m=1}^{M}e_m^2(n), \quad e_m(n) = out\_output_1
+      - y_m
+    description: 第n代网络总误差，用于反向传播调整权值
+  - name: 动量BP法权值修正
+    latex: \Delta w(n) = -\eta(1-\alpha)\nabla e(n) + \alpha\Delta w(n-1)
+    description: 引入动量因子α（0<α<1）加速收敛并避免陷入局部最优
+  - name: 优化模型目标函数与约束
+    latex: \min f(x) = Z, \quad s.t. \begin{cases} \frac{Z-\bar{Z}}{\bar{Z}} < 30\%
+      \\ 0 < S < 5 \\ (X_i)_t = (X_i)_{t-1}, \quad X_i\text{为原料性质变量} \end{cases}
+    description: Z为辛烷值损失值，S为产品硫含量，原料性质变量在优化过程中保持不变
+  - name: 适应度函数
+    latex: fitness = \begin{cases} \frac{1}{R_0 - R_1} & (L_0 < 5 \text{ 且 } (R_0-R_1)/R_{lost}
+      > 30\%) \\ 0.0001 & (L_0 \geq 5 \text{ 或 } (R_0-R_1)/R_{lost} \leq 30\%) \end{cases}
+    description: 以辛烷值损失值的倒数作为适应度，不满足约束条件的个体适应度赋极小值
+  - name: 多元非均匀变异算子
+    latex: a_{ij} = \begin{cases} a_{ij} + (a_{max} - a_{ij}) \cdot f(g), & r_1 \geq
+      0.5 \\ a_{ij} + (a_{min} - a_{ij}) \cdot f(g), & r_1 < 0.5 \end{cases}, \quad
+      f(g) = r_2\left(1 - \frac{g}{G_{max}}\right)^2
+    description: 实数编码遗传算法的变异操作，g为当前迭代次数，G_max为最大进化次数
+  algorithm_outline:
+  - language: python
+    description: 数据预处理：异常值检测与补齐
+    code: "# Step 1: 最大最小限幅法\nfor j in range(n_cols):\n    for i in range(n_rows):\n\
+      \        if D[i,j] > cmax[j] or D[i,j] < cmin[j]:\n            D_maxmin[i,j]\
+      \ = 0\n        else:\n            D_maxmin[i,j] = D[i,j]\n\n# Step 2: 拉依达准则(3σ)\n\
+      mean_j = np.mean(D_maxmin, axis=0)\nvi = D_maxmin - mean_j\nsigma_j = np.sqrt(np.sum(vi**2,\
+      \ axis=0) / (n_rows - 1))\nfor j in range(n_cols):\n    for i in range(n_rows):\n\
+      \        if abs(vi[i,j]) > 3 * sigma_j[j]:\n            LD[i,j] = 0\n      \
+      \  else:\n            LD[i,j] = D_maxmin[i,j]\n\n# Step 3: 删除异常值超过20个的行\nfor\
+      \ i in range(n_rows):\n    if count_zeros(LD[i,:]) > 20:\n        delete_row(i)\n\
+      \n# Step 4: 用均值补齐剩余缺失值\nfor i in range(n_rows):\n    for j in range(n_cols):\n\
+      \        if LD[i,j] == 0:\n            LD[i,j] = column_mean[j]"
+  - language: python
+    description: 灰色关联度分析筛选主要变量
+    code: "# Step 1: 均值化无量纲处理\nx_mean = np.mean(x, axis=1)\nfor i in range(n_vars):\n\
+      \    x[i,:] = x[i,:] / x_mean[i]\n\n# Step 2: 以辛烷值为参考序列\nX0 = x[0,:]  # 参考序列\n\
+      Xi = x[1:,:]  # 比较序列\n\n# Step 3: 计算关联系数\nfor k in range(n_time):\n    for i\
+      \ in range(n_vars-1):\n        diff = abs(X0[k] - Xi[i,k])\n        r[i,k] =\
+      \ (min_diff + 0.5*max_diff) / (diff + 0.5*max_diff)\n\n# Step 4: 计算关联度并筛选\n\
+      r_avg = np.mean(r, axis=1)\nselected_vars = [i for i in range(n_vars) if r_avg[i]\
+      \ > 0.8]"
+  - language: python
+    description: BP神经网络预测模型构建与训练
+    code: '# 数据划分
+
+      train_input = input[:300, :]   # 300×30
+
+      train_output = output[:300, :] # 300×2
+
+      test_input = input[300:, :]    # 25×30
+
+      test_output = output[300:, :]  # 25×2
+
+
+      # 归一化到[-1,1]
+
+      train_input_norm, input_ps = mapminmax(train_input)
+
+      train_output_norm, output_ps = mapminmax(train_output)
+
+
+      # 构建三层BP网络
+
+      net = newff(train_input_norm, train_output_norm, hidden_nodes=90)
+
+      net.trainParam.epochs = 1000
+
+      net.trainParam.lr = 0.4
+
+      net.trainParam.goal = 1e-6
+
+
+      # 训练
+
+      net = train(net, train_input_norm, train_output_norm)
+
+
+      # 测试
+
+      test_input_norm = mapminmax_apply(test_input, input_ps)
+
+      pred_norm = sim(net, test_input_norm)
+
+      pred = mapminmax_reverse(pred_norm, output_ps)
+
+
+      # 误差计算
+
+      error = sqrt((pred[:,0]-test_output[:,0])**2 + (pred[:,1]-test_output[:,1])**2)'
+  - language: python
+    description: 遗传算法优化操作变量
+    code: "# 参数设置\npopsize = 50\npc = 0.2\npm = 0.09\nmax_iter = 1000\nn_genes = 30\
+      \  # 前2个为原料性质(固定)，后28个为操作变量\n\n# 初始化种群\npop = np.random.uniform(-1, 1, (n_genes,\
+      \ popsize))\npop[0,:] = x1_norm  # 原料辛烷值标准化值\npop[1,:] = x2_norm  # 饱和烃标准化值\n\
+      \nfor gen in range(max_iter):\n    # 适应度评估：将种群输入BP网络\n    pred = sim(net, pop)\n\
+      \    pred_real = mapminmax_reverse(pred, output_ps)\n    \n    fitness = []\n\
+      \    for j in range(popsize):\n        S = pred_real[0,j]  # 硫含量\n        R1\
+      \ = pred_real[1,j]  # 产成品辛烷值\n        R_loss = R0 - R1\n        if S < 5 and\
+      \ R_loss/R_lost_mean > 0.3 and R_loss > 0:\n            fitness.append(1/R_loss)\n\
+      \        else:\n            fitness.append(0.0001)\n    \n    # 轮盘赌选择\n    prob\
+      \ = fitness / sum(fitness)\n    cum_prob = cumsum(prob)\n    new_pop = select_by_roulette(pop,\
+      \ cum_prob, popsize)\n    \n    # 两点交叉\n    for k in range(popsize // 2):\n\
+      \        if random() < pc:\n            p1, p2 = random_parents()\n        \
+      \    pos1, pos2 = random_two_points()\n            swap_genes(new_pop, p1, p2,\
+      \ pos1, pos2)\n    \n    # 多元非均匀变异\n    for k in range(popsize):\n        if\
+      \ random() < pm:\n            gene_idx = random_gene()\n            r1, r2 =\
+      \ random(), random()\n            f_g = r2 * (1 - gen/max_iter)**2\n       \
+      \     if r1 >= 0.5:\n                new_pop[gene_idx,k] += (a_max - new_pop[gene_idx,k])\
+      \ * f_g\n            else:\n                new_pop[gene_idx,k] += (a_min -\
+      \ new_pop[gene_idx,k]) * f_g\n    \n    pop = new_pop\n\n# 输出最优个体\nbest_idx\
+      \ = argmax(fitness)\nbest_solution = pop[:, best_idx]"
+  assumption_analysis:
+  - '假设1: 每行残缺数据超过20个（即''0''的个数超过20个）则认为数据残缺较多，删除该行 → 该阈值设定缺乏理论依据，原文在模型缺点中也承认需进一步讨论。如果放松（如改为15或25），会影响样本数量和模型训练效果；如果收紧，可能保留过多低质量数据'
+  - '假设2: 缺失值用其前后两个小时数据的平均值补齐 → 原文实际代码中使用的是整列均值补齐，而非前后两小时均值，存在表述与实现不一致的问题。对于时间序列数据，前后时刻均值可能比全局均值更合理'
+  - '假设3: 灰色关联度大于80%的变量为建模主要变量 → 该阈值使得筛选出恰好30个变量，满足题目要求（30个以下），但阈值设定有一定主观性。如果降低阈值会引入更多变量增加模型复杂度，提高阈值可能遗漏重要变量'
+  - '假设4: 前300组数据为训练集，后25组为测试集 → 按时间顺序划分，符合实际预测场景，但未考虑交叉验证。如果数据存在时间趋势，后25组可能不代表整体分布'
+  - '假设5: 优化过程中原料、待生吸附剂、再生吸附剂的性质保持不变 → 这是题目明确要求的约束，合理且符合实际生产场景'
+  - '假设6: 遗传算法中不满足约束条件的个体适应度赋值为0.0001 → 这是一种惩罚策略，但固定小值可能导致这些个体仍有一定概率被选中，影响收敛速度'
+  reusable_patterns:
+  - '两阶段异常值检测模式: 先用物理范围（最大最小限幅）粗筛，再用统计准则（3σ）精筛，兼顾领域知识和统计严谨性。可迁移到任何工业数据预处理场景'
+  - '灰色关联+神经网络+遗传算法的三阶段建模框架: 灰色关联降维→神经网络建立非线性映射→遗传算法在映射空间上寻优。这是处理''高维输入+非线性响应+优化求解''类问题的通用范式'
+  - '神经网络嵌入遗传算法的适应度评估: 将训练好的预测模型作为遗传算法的适应度函数，实现''预测+优化''的闭环。适用于目标函数无解析表达式、只能通过仿真评估的优化问题'
+  - '单变量扫描可视化分析: 固定其他变量为最小值，逐个调整单一变量并观察输出变化，绘制影响曲线。这是理解黑箱模型行为的有效方法，可迁移到任何需要解释模型输入-输出关系的场景'
+  - '参数敏感性分析方法论: 通过控制变量法逐一讨论隐含层节点数、学习率、种群规模、交叉率、变异率等超参数对模型性能的影响，确定最优参数组合'
+  common_pitfalls:
+  - mistake: 数据补齐时原文声称用'前后两小时数据的平均值'补齐，但代码实现使用的是整列均值补齐
+    solution: 应确保论文描述与代码实现一致。对于时间序列数据，建议使用前后时刻的局部均值或插值方法，而非全局均值
+  - mistake: 灰色关联度阈值设定为80%缺乏理论依据，且恰好筛选出30个变量可能与题目要求（30个以下）存在巧合
+    solution: 应通过敏感性分析讨论不同阈值对模型性能的影响，或采用其他降维方法（如PCA、随机森林特征重要性）进行交叉验证
+  - mistake: BP神经网络仅使用单隐含层，未讨论多隐含层结构的效果
+    solution: 应尝试2-3个隐含层的网络结构，对比单层与多层的拟合能力和泛化能力。原文在模型缺点中也承认了这一不足
+  - mistake: 遗传算法参数确定时，每次只变化一个参数而固定其他参数，忽略了参数间的交互作用
+    solution: 可采用正交实验设计或网格搜索来同时考虑多个参数的交互效应
+  - mistake: 可视化展示仅讨论单变量变化的影响，未考虑多变量同时调整的耦合效应
+    solution: 可采用部分依赖图（PDP）或SHAP值分析多变量交互效应，或设计多变量联合调整方案
+  - mistake: 训练集和测试集按时间顺序简单划分，未考虑数据分布的时间漂移
+    solution: 应检查训练集和测试集的分布是否一致，必要时采用时间序列交叉验证或分层抽样
+  difficulty: 3
+  difficulty_level: medium
+  analysis:
+    problem_summary: 从367个高维操作变量中筛选关键变量，建立辛烷值损失的非线性预测模型，并在硫含量约束下通过遗传算法优化操作条件使辛烷值损失最小化
+    key_assumptions:
+    - 异常值超过20个的样本行整行删除
+    - 缺失值用均值补齐
+    - 灰色关联度>80%的变量为关键变量
+    - 原料和吸附剂性质在优化过程中不变
+    - BP神经网络能充分拟合操作变量与产品性质之间的非线性关系
+    decision_variables: 28个操作变量的取值（还原器压力、稳定塔顶压力、各温度、压力、流量等），原料性质变量（辛烷值、饱和烃含量）在优化中固定不变
+    objective: 最小化辛烷值损失值Z = R0 - R1（原料辛烷值减去产成品辛烷值），同时满足硫含量S < 5μg/g和辛烷值损失降幅>30%的约束
+    constraints: ①产品硫含量0 < S < 5μg/g；②辛烷值损失降幅(Z - Z̄)/Z̄ > 30%；③原料性质变量在优化过程中保持不变；④各操作变量在其允许范围内变化
+  model:
+    approach: 整体建模分为四个层次：第一层是数据预处理，采用最大最小限幅法和3σ准则双重异常值检测，对异常值超过阈值的样本行删除，其余缺失值补齐；第二层是变量降维，利用灰色关联度分析计算367个变量与产成品辛烷值的关联度，筛选出关联度大于80%的30个主要变量（2个原料性质+28个操作变量）；第三层是预测模型构建，以30个变量为输入、产成品辛烷值和含硫量为输出，构建含动量因子的三层BP神经网络，通过对比实验确定隐含层节点数90和学习率0.4；第四层是优化模型，以辛烷值损失最小为目标，以硫含量≤5μg/g和损失降幅>30%为约束，采用实数编码遗传算法求解，将BP神经网络嵌入遗传算法作为适应度评估函数，通过参数敏感性分析确定种群规模50、迭代次数1000、交叉率0.2、变异率0.09。最后对133号样本进行单变量扫描可视化，展示各操作变量对产成品辛烷值和硫含量的影响方向。
+    innovation: 将BP神经网络预测模型嵌入遗传算法的适应度评估环节，形成'预测+优化'的闭环框架。同时采用灰色关联度分析进行变量降维，有效处理了高维非线性耦合变量系统的建模问题。在遗传算法中采用实数编码和多元非均匀变异算子，提高了搜索效率和精度。
+    solution_method: MATLAB软件实现，主要使用newff函数构建BP神经网络，mapminmax进行数据归一化，自定义遗传算法（轮盘赌选择+两点交叉+多元非均匀变异）进行优化求解
+  evaluation:
+    strengths:
+    - 数据处理流程完整，采用双重异常值检测方法（最大最小限幅+3σ准则），提高了数据可靠性
+    - 灰色关联度分析适用于贫信息、非线性关系的数据降维，克服了传统相关性分析的局限
+    - BP神经网络通过动量因子改进，加速了收敛并提高了拟合精度
+    - 遗传算法参数通过系统的对比实验确定，而非经验取值，增强了模型的可信度
+    - 将预测模型嵌入优化算法的框架设计合理，实现了数据驱动的优化决策
+    - 可视化分析详细，对28个操作变量的影响方向逐一进行了讨论
+    weaknesses:
+    - 数据补齐方法描述与代码实现不一致（声称前后两小时均值，实际用全局均值）
+    - 异常值删除阈值（20个）缺乏理论依据和敏感性分析
+    - BP神经网络仅测试单隐含层，未讨论多隐含层结构
+    - 遗传算法参数确定采用单因素变化法，忽略了参数间交互作用
+    - 可视化仅展示单变量变化，未讨论多变量耦合效应
+    - 未报告BP神经网络在测试集上的具体预测精度指标（如R²、RMSE等）
+    - 灰色关联度阈值80%的选取缺乏充分论证
+    lessons: 这篇论文展示了一个完整的'数据预处理→变量筛选→预测建模→优化求解→可视化分析'的建模范式，特别适合处理高维非线性工业过程的预测与优化问题。最重要的方法论启示是：面对高维耦合变量系统，应先通过灰色关联等方法降维，再用神经网络建立非线性映射，最后用智能优化算法在映射空间上寻优。同时，论文也提醒我们注意论文描述与代码实现的一致性、参数选取的敏感性分析、以及模型验证的充分性。在实际应用中，还需考虑多变量耦合效应和模型的泛化能力。
+  takeaways: []
+  source: 中国研究生创新实践系列大赛'华为杯'第十七届中国研究生数学建模竞赛
+  quality_rating: 3

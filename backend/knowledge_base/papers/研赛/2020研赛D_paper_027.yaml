@@ -1,0 +1,160 @@
+paper:
+  id: paper_027
+  year: 2020
+  competition: 研赛
+  problem_id: D
+  title: 汽油辛烷值优化建模
+  tags:
+    problem_type:
+    - 预测
+    - 优化
+    core_models:
+    - LightGBM
+    - 集成学习
+    - 多层感知机
+    - 随机森林
+    - 决策树
+    - GBDT
+    - NSGA-II遗传算法
+    - 帕累托最优
+    techniques:
+    - 数据清洗
+    - 3σ准则
+    - 最大最小限幅
+    - 特征筛选
+    - 相关性分析
+    - 模型融合
+    - 多目标优化
+  problem_ref: ''
+  problem_context: 汽油是小型车辆的主要燃料，其燃烧产生的尾气排放对大气环境有重要影响。世界各国制定了日益严格的汽油质量标准，汽油清洁化重点是降低汽油中的硫、烯烃含量，同时尽量保持其辛烷值。辛烷值（RON）是反映汽油燃烧性能的最重要指标。现有技术在催化裂化汽油脱硫和降烯烃过程中普遍降低了汽油辛烷值。某石化企业运行4年的催化裂化汽油精制脱硫装置积累了325个数据样本，每个样本有354个操作变量，共367个变量。汽油产品辛烷值损失平均为1.37个单位，相较于同类装置最小损失值0.6个单位有较大优化空间。问题要求通过数据挖掘技术建立汽油辛烷值损失预测模型，在保证产品硫含量不大于5µg/g的前提下，给出每个样本的优化操作条件，使辛烷值损失降幅在30%以上。具体包括：数据预处理、特征筛选、建立预测模型、多目标优化、以及特定样本的优化过程可视化。
+  methodology_chain:
+  - '数据预处理: 对285号和313号原始数据按给定规范求均值，补充到样本数据集中'
+  - '数据清洗: 对全部样本按最大最小限幅和3σ准则剔除异常操作变量'
+  - '第一轮特征筛选: 用LightGBM对硫含量和RON损失做特征重要性打分，筛选前40重要变量，结合原料性质和吸附剂性质保留19个变量，再通过相关性分析剔除高相关变量，保留17个'
+  - '第二轮特征筛选: 对57个独立低排名变量做相关性分析和决策树特征选择，选出5个变量'
+  - '特征筛选结果: 共选出22个主要变量（含17个操作变量）'
+  - '集成学习建模: 构建MLP、随机森林、决策树、LightGBM四个基学习器，再融合到GBDT元学习器，分别建立硫含量和RON损失的预测模型'
+  - '模型验证: 用MSE和MAE评价集成模型与各基学习器，集成模型误差最小'
+  - '多目标优化: 以两个集成模型为目标函数，采用基于NSGA-II的遗传算法求解每个样本的帕累托最优操作变量'
+  - '结果筛选: 从325个样本中筛选出304个满足硫含量≤5µg/g且RON损失降幅≥30%的样本'
+  - '133号样本分析: 寻找133号样本的帕累托最优操作变量，制定逐步调整策略，预测调整过程中的RON和硫含量变化'
+  key_formulas:
+  - name: 贝塞尔公式（标准差）
+    latex: \sigma = \sqrt{\frac{1}{n-1}\sum_{i=1}^{n}v_i^2} = \sqrt{\frac{\sum_{i=1}^{n}x_i^2
+      - \frac{(\sum_{i=1}^{n}x_i)^2}{n}}{n-1}}
+    description: 用于3σ准则中计算标准差，判断异常值
+  - name: 3σ准则
+    latex: '|v_b| = |x_b - \bar{x}| > 3\sigma'
+    description: 判断测量值是否为含有粗大误差的坏值，若满足则剔除
+  - name: 多目标优化方程
+    latex: \min\{Z_1 = F_1(x_i), Z_2 = F_2(x_i)\}, \quad s.t. \quad low \leq x_i \leq
+      high
+    description: 对每个样本求解操作变量在允许范围内使RON损失和硫含量最小化的多目标优化问题
+  - name: 均方误差（MSE）
+    latex: MSE = \frac{1}{n}\sum_{i=1}^{n}(y_i - \hat{y}_i)^2
+    description: 评价预测模型精度的指标，值越小表示预测越准确
+  - name: 平均绝对误差（MAE）
+    latex: MAE = \frac{1}{n}\sum_{i=1}^{n}|y_i - \hat{y}_i|
+    description: 评价预测模型精度的指标，反映预测值误差的实际情况
+  algorithm_outline:
+  - language: python
+    description: 数据清洗：最大最小限幅和3σ准则剔除异常变量
+    code: "# 最大最小限幅检查\nfor col in data.columns:\n    if data[col].min() < lower_bound[col]\
+      \ or data[col].max() > upper_bound[col]:\n        drop_column(col)\n\n# 3σ准则剔除异常值\n\
+      for col in data.columns:\n    mean = data[col].mean()\n    std = data[col].std()\n\
+      \    outliers = data[(data[col] - mean).abs() > 3 * std]\n    if len(outliers)\
+      \ / len(data) > threshold:\n        drop_column(col)"
+  - language: python
+    description: LightGBM特征重要性打分
+    code: 'import lightgbm as lgb
+
+
+      model = lgb.LGBMRegressor()
+
+      model.fit(X, y)
+
+      importance = model.feature_importances_
+
+      # 按重要性排序，筛选前40个变量
+
+      selected_features = X.columns[importance.argsort()[-40:]]'
+  - language: python
+    description: 集成学习模型构建（基学习器+元学习器）
+    code: "from sklearn.ensemble import RandomForestRegressor\nfrom sklearn.tree import\
+      \ DecisionTreeRegressor\nfrom sklearn.neural_network import MLPRegressor\nimport\
+      \ lightgbm as lgb\nfrom sklearn.ensemble import GradientBoostingRegressor\n\n\
+      # 基学习器\nbase_models = [\n    MLPRegressor(),\n    RandomForestRegressor(),\n\
+      \    DecisionTreeRegressor(),\n    lgb.LGBMRegressor()\n]\n\n# 训练基学习器并获取预测结果\n\
+      base_predictions = []\nfor model in base_models:\n    model.fit(X_train, y_train)\n\
+      \    base_predictions.append(model.predict(X_val))\n\n# 元学习器\nmeta_model = GradientBoostingRegressor()\n\
+      meta_model.fit(np.array(base_predictions).T, y_val)"
+  - language: python
+    description: NSGA-II多目标遗传算法优化
+    code: '# 使用遗传算法求解帕累托最优
+
+      # 目标函数为两个集成学习模型的预测
+
+      # 决策变量为操作变量，约束为操作变量范围
+
+
+      from pymoo.algorithms.moo.nsga2 import NSGA2
+
+      from pymoo.optimize import minimize
+
+
+      problem = MyProblem(model_RON, model_CP, bounds)
+
+      algorithm = NSGA2(pop_size=60)
+
+      res = minimize(problem, algorithm, (''n_gen'', 200))
+
+      # res.X为帕累托最优操作变量，res.F为目标函数值'
+  assumption_analysis:
+  - '假设1: 以辛烷值数据测定的时间点为基准时间，取其前2个小时的操作变量数据的平均值作为对应辛烷值的操作变量数据 → 这是题目给定的数据规范，合理且必要，因为操作变量和辛烷值测定存在时间差，取均值可平滑波动'
+  - '假设2: 原料性质、待生吸附剂、再生吸附剂的性质在优化过程中保持不变 → 这是问题四的约束条件，合理，因为这些是进料属性，操作变量才是可调的'
+  - '假设3: 集成学习模型的预测值可以替代真实值用于优化 → 这是合理的，因为模型经过验证误差较小，但存在模型误差传播的风险'
+  - '假设4: 操作变量之间相互独立，可独立调整 → 实际化工过程中操作变量可能存在耦合，但论文未考虑，可能影响优化结果的可行性'
+  reusable_patterns:
+  - '两阶段特征筛选模式: 先用嵌入式方法（LightGBM特征重要性）快速筛选高重要性变量，再用过滤式（相关性分析）剔除冗余变量，最后用封装式（决策树）精选变量，兼顾效率和效果'
+  - '集成学习模型融合模式: 构建多个相关性较低的基学习器（MLP、RF、DT、LightGBM），再用GBDT作为元学习器进行stacking融合，可显著降低预测误差'
+  - '黑盒优化模式: 当目标函数无解析表达式时，用机器学习模型作为代理模型，结合遗传算法（NSGA-II）进行多目标优化，求解帕累托最优解'
+  - '逐步调整策略: 对于需要实际操作的优化问题，将最优解与初始值的差异分解为多个调整步，每步按最大允许幅度调整，形成可执行的调整路径'
+  common_pitfalls:
+  - mistake: 特征筛选时仅依赖模型特征重要性，忽略变量间的相关性，导致选入高度相关的冗余变量
+    solution: 结合相关性分析，对相关性>0.8的变量对进行剔除，避免多重共线性
+  - mistake: 直接使用原始数据建模，未进行异常值处理，导致模型被极端值影响
+    solution: 先按最大最小限幅和3σ准则清洗数据，剔除异常样本和变量
+  - mistake: 多目标优化时直接求解帕累托前沿，但未根据实际约束筛选可行解
+    solution: 在获得帕累托最优解后，根据题目约束（硫含量≤5µg/g，RON损失降幅≥30%）筛选满足条件的解
+  - mistake: 集成学习时基学习器选择过于相似，导致融合效果不佳
+    solution: 选择相关性较低的基学习器（如树模型和神经网络），确保模型多样性
+  difficulty: 3
+  difficulty_level: hard
+  analysis:
+    problem_summary: 基于工业数据建立汽油辛烷值损失和硫含量的预测模型，并在保证脱硫效果的前提下优化操作变量以降低辛烷值损失
+    key_assumptions:
+    - 操作变量前2小时均值代表该样本的操作条件
+    - 原料和吸附剂性质在优化中保持不变
+    - 集成学习模型预测值可替代真实值用于优化
+    decision_variables: 354个操作变量（经筛选后保留17个主要操作变量），记为x_i
+    objective: 最小化RON损失和硫含量，即min{Z1=F1(x), Z2=F2(x)}
+    constraints: 操作变量在工艺允许范围内（low ≤ x_i ≤ high），产品硫含量≤5µg/g，RON损失降幅≥30%
+  model:
+    approach: 首先对工业数据进行预处理和清洗，通过两轮特征筛选（LightGBM重要性+相关性分析+决策树）从367个变量中选出22个主要变量。然后构建集成学习模型：以MLP、随机森林、决策树、LightGBM为基学习器，GBDT为元学习器，分别建立硫含量和RON损失的预测模型。最后以两个预测模型为目标函数，采用基于NSGA-II的遗传算法进行多目标优化，求解每个样本的帕累托最优操作变量，并筛选出满足约束条件的优化方案。
+    innovation: 将集成学习与多目标遗传算法结合，用于化工过程的黑盒优化；采用两阶段特征筛选策略有效降维；对133号样本进行逐步调整策略的详细分析
+    solution_method: Python（sklearn、lightgbm、pymoo等库），集成学习（Stacking），NSGA-II遗传算法
+  evaluation:
+    strengths:
+    - 特征筛选流程严谨，结合了多种方法
+    - 集成学习模型预测精度高，MSE和MAE均优于单一基学习器
+    - 多目标优化采用NSGA-II，有效处理了黑盒目标函数
+    - 对133号样本进行了详细的调整过程分析，具有实际指导意义
+    weaknesses:
+    - 未考虑操作变量之间的耦合关系
+    - 模型误差在优化过程中可能被放大
+    - 对硫含量预测模型的误差较大，可能影响优化结果的可靠性
+    - 未讨论遗传算法参数敏感性
+    lessons: 对于复杂的工业优化问题，可以采用'数据清洗→特征筛选→集成学习预测→智能优化'的建模范式。集成学习能有效提升预测精度，而遗传算法等启发式方法适合处理黑盒多目标优化。实际应用中需注意模型误差传播和约束条件的可行性验证。
+  takeaways: []
+  source: 第十七届中国研究生数学建模竞赛华为杯
+  quality_rating: 4

@@ -66,6 +66,11 @@
         <div v-if="detailLoading && detailViewMode === 'structured'" class="space-y-3"><Skeleton class="h-4 w-full" /><Skeleton class="h-4 w-5/6" /></div>
         <div v-else-if="detailData && detailViewMode === 'structured'" class="text-sm space-y-4 py-2">
           <template v-if="detailData.type === 'method_card'">
+            <div v-if="detailData.data.unit_id" class="flex items-center gap-2">
+              <span class="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">学习单元</span>
+              <span class="text-xs text-primary cursor-pointer hover:underline" @click="goToUnit(detailData.data.unit_id)">📖 {{ detailData.data.unit_id }} →</span>
+              <span class="text-[10px] text-muted-foreground/60">该卡片的长文即此学习单元正文</span>
+            </div>
             <p class="leading-relaxed">{{ detailData.data.principle }}</p>
             <div><h4 class="font-display font-medium text-sm mb-1">适用条件</h4><ul class="list-disc list-inside text-muted-foreground text-sm"><li v-for="c in detailData.data.applicable_when" :key="c">{{ c }}</li></ul></div>
           </template>
@@ -201,6 +206,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChevronRight, Loader2, Search } from "lucide-vue-next";
 import { computed, onMounted, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 
 // ── Tab 1: Search ───────────────────────────────────────────────
 const searchQuery = ref("");
@@ -398,6 +404,12 @@ async function openDetail(r: SearchResult) {
   } catch {
     /* no raw text available */
   }
+}
+const router = useRouter();
+
+/** 方案 C：从知识库卡片跳转到关联学习单元（卡片长文即单元正文）。 */
+function goToUnit(unitId: string) {
+  router.push(`/learn/${unitId}`);
 }
 async function openProblemFromPaper(problemRef: string) {
   // 打开关联的题目详情

@@ -47,6 +47,8 @@ class MethodCardDetail(BaseModel):
     code_snippets: list[dict]
     related_cards: list[str]
     related_papers: list[str]
+    # 方案 C：关联的学习单元 id（前端可跳转 /learn/<unit_id>）；空串表示无关联
+    unit_id: str = ""
 
 
 class PaperSummary(BaseModel):

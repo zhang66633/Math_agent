@@ -42,6 +42,8 @@ export interface MethodCardDetail extends MethodCardSummary {
   code_snippets: { language: string; description: string; code: string }[];
   related_cards: string[];
   related_papers: string[];
+  /** 方案 C：关联学习单元 id（空串 = 无）；非空时详情页可跳转 /learn/<unit_id> */
+  unit_id: string;
 }
 
 export interface PaperSummary {

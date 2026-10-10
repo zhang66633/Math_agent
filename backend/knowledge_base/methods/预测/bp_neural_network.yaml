@@ -5,6 +5,7 @@ method_card:
   category:
   - 预测与分类
   - 机器学习
+  - 优化
   principle: 'BP 神经网络是一种多层前馈神经网络，通过误差反向传播算法训练。
 
     网络由输入层、隐藏层（1层或多层）和输出层组成，层间全连接，
@@ -40,30 +41,81 @@ method_card:
   - MSE 损失：E = (1/n)·Σ(y_pred - y_true)^2
   - 权值更新：ΔW = -η · ∂E/∂W
   - 隐藏层节点数：m = sqrt(n_input + n_output) + a, a∈[1,10]
+  - name: 神经元加权求和
+    latex: $$u_k=\sum_{j=1}^{p} w_{kj} x_j$$
+    description: 第k个神经元对p个输入信号的线性组合。
+  - name: 神经元输出
+    latex: $$y_k=\varphi(u_k-\theta_k)$$
+    description: 经阈值调整后通过激活函数φ得到神经元输出。
+  - name: 阈值型激活函数
+    latex: $$\varphi(v)=\begin{cases}1,&v\ge0\\0,&v<0\end{cases}$$
+    description: 阶梯函数，对应MP模型。
+  - name: 分段线性激活函数
+    latex: $$\varphi(v)=\begin{cases}1,&v\ge1\\ \frac{1}{2}(v+1),&-1<v<1\\0,&v\le-1\end{cases}$$
+    description: 线性区放大系数为1，饱和区输出0或1。
+  - name: sigmoid激活函数
+    latex: $$\varphi(v)=\frac{1}{1+\exp(-\alpha v)}$$
+    description: 常用光滑单调函数，α>0控制斜率。
+  - name: 双曲正切激活函数
+    latex: $$\varphi(v)=\tanh(v)=\frac{1-\exp(-2v)}{1+\exp(-2v)}$$
+    description: 具有平滑、渐近和单调性的常用激活函数。
+  - name: 隐层输出
+    latex: $$H_j^s=\varphi\left(\sum_{k=1}^{2}w_{jk}I_k^s\right)$$
+    description: 第s个样品在隐单元j的输出。
+  - name: 网络最终输出
+    latex: $$O_i^s=\varphi\left(\sum_{j=1}^{3}w_{ij}\varphi\left(\sum_{k=1}^{2}w_{jk}I_k^s\right)\right)$$
+    description: 输入经隐层和输出层两次映射后的最终输出。
+  - name: 误差平方和代价函数
+    latex: $$E(W)=\frac12\sum_{i,s}(T_i^s-O_i^s)^2$$
+    description: 度量实际输出与理想输出的差异。
+  - name: 输出层权值修正
+    latex: $$\Delta w_{ij}=\eta\sum_s \delta_i^s H_j^s$$
+    description: 其中δ_i^s=(T_i^s-O_i^s)φ'(h_i^s)。
+  - name: 隐层权值修正
+    latex: $$\Delta w_{jk}=\eta\sum_s \delta_j^s I_k^s$$
+    description: 其中δ_j^s=φ'(h_j^s)∑_i w_{ij}δ_i^s，体现误差反向传播。
+  - name: 广义δ规则
+    latex: $$\Delta w_{pq}=\eta\sum_s \delta_p^s v_q^s$$
+    description: 所有权值修正的统一形式，p对应输出端，q对应输入端。
   applicable_when:
   - 输入输出之间存在复杂非线性关系
   - 有足够的训练数据（样本数 > 10× 网络参数数）
   - 传统回归/分类模型（如线性回归、逻辑回归）效果不佳
   - 对模型可解释性要求不高
+  - 有监督分类或函数逼近任务，已给出类别标签的训练样本
+  - 输入输出可表示为固定维向量
+  - 问题非线性可分，需要非线性映射能力
+  - 可接受迭代训练与局部最优风险的中小规模问题
   typical_scenarios:
   - 非线性函数拟合：复杂工程曲线的逼近
   - 分类预测：如故障诊断、疾病预测、信用评估
   - 时间序列预测：用水量、电力负荷、股票趋势（需滑动窗口构造监督学习）
   - 模式识别：手写数字、语音识别的基础网络
   - 组合预测：与 ARIMA 等其他模型集成
+  - 蠓虫等生物分类与模式识别
+  - 图像处理与识别
+  - 金融预测与管理
+  - 智能控制、函数逼近
   common_mistakes:
   - 数据未归一化导致梯度消失/爆炸；统一归一化到 [-1,1] 或 [0,1]
   - 隐藏层节点数过多导致过拟合；用早停法或正则化
   - 学习率过大导致震荡不收敛；建议从 0.01 开始逐步调整
   - 训练集/测试集划分不合理导致评估失真；保留 20-30% 测试数据
+  - mistake: 将BP算法的收敛解视为全局最优解
+    solution: 认识到其可能只是局部极小，使用多组随机初值或模拟退火等改进方法
+  - mistake: 把输入层计入网络层数，将示例网络称为三层网络
+    solution: 通常只计含可调权值的处理层，如中间层和输出层，因此可称两层前传网络
+  - mistake: 选择过大学习率η导致误差不下降或震荡
+    solution: 设置足够小的学习率，或采用自适应学习率、动量等修正方式
   code_snippets:
-  - "# Python: PyTorch BP 网络示例\nimport torch\nimport torch.nn as nn\n\nclass BPNN(nn.Module):\n    def\
-    \ __init__(self, input_dim, hidden_dim, output_dim):\n        super().__init__()\n        self.net\
-    \ = nn.Sequential(\n            nn.Linear(input_dim, hidden_dim),\n            nn.ReLU(),\n      \
-    \      nn.Linear(hidden_dim, output_dim),\n        )\n    def forward(self, x):\n        return self.net(x)\n\
-    \n# 训练\nmodel = BPNN(10, 20, 1)\ncriterion = nn.MSELoss()\noptimizer = torch.optim.Adam(model.parameters(),\
-    \ lr=0.01)\nfor epoch in range(200):\n    pred = model(X_train)\n    loss = criterion(pred, y_train)\n\
-    \    optimizer.zero_grad()\n    loss.backward()\n    optimizer.step()\n"
+  - "# Python: PyTorch BP 网络示例\nimport torch\nimport torch.nn as nn\n\nclass BPNN(nn.Module):\n\
+    \    def __init__(self, input_dim, hidden_dim, output_dim):\n        super().__init__()\n\
+    \        self.net = nn.Sequential(\n            nn.Linear(input_dim, hidden_dim),\n\
+    \            nn.ReLU(),\n            nn.Linear(hidden_dim, output_dim),\n    \
+    \    )\n    def forward(self, x):\n        return self.net(x)\n\n# 训练\nmodel =\
+    \ BPNN(10, 20, 1)\ncriterion = nn.MSELoss()\noptimizer = torch.optim.Adam(model.parameters(),\
+    \ lr=0.01)\nfor epoch in range(200):\n    pred = model(X_train)\n    loss = criterion(pred,\
+    \ y_train)\n    optimizer.zero_grad()\n    loss.backward()\n    optimizer.step()\n"
   related_cards:
   - mc_017
   - mc_004
@@ -81,3 +133,9 @@ method_card:
     - 链式求导
     - 梯度下降
     - 矩阵乘法
+  not_applicable_when:
+  - 训练样本很少且噪声大，容易过拟合
+  - 要求得到全局最优解或严格的解释性模型
+  - 数据规模很大且算力或时间受限，BP收敛较慢
+  - 需要处理序列上下文时，简单前馈BP网络不适合
+  related_papers: []

@@ -1,5 +1,5 @@
 method_card:
-  id: mc_048
+  id: mc_090
   name: 确定性存贮模型（EOQ/EPQ及变体）
   name_en: Deterministic Inventory Models (EOQ/EPQ and variants)
   category:

@@ -265,8 +265,9 @@ async def run_extraction(
                 attach_path = attach_dir / (fd["name"] or "attachment")
                 attach_path.write_bytes(fd["bytes"])
 
-        # 4. Incremental index(无 embedding key 时跳过向量索引,BM25/关键词检索仍可用)
+        # 4. Incremental index(无 embedding key 或索引失败时降级关键词检索,YAML 已落盘不受影响)
         embedder = _get_embedder(user_login)
+        index_warning = ""
         if embedder.embeddings is None:
             from ..knowledge.retriever import invalidate_shared_retriever
 
@@ -274,8 +275,19 @@ async def run_extraction(
             invalidate_shared_retriever()
             indexed = "keyword-only"
         else:
-            embedder.add_document(out_path)
-            indexed = "vector"
+            try:
+                embedder.add_document(out_path)
+                indexed = "vector"
+            except Exception as e:
+                # 索引失败(典型:embedding 配额耗尽 403)不否定提取成果——YAML 已落盘,
+                # loader/关键词检索立即可见;向量索引待配额恢复后 rebuild 即可。
+                # 2026-10 教训:此前此处异常直接把 job 判 error,用户看到「导入失败」,
+                # 但数据其实已进知识库,重试还会产生重复条目(本次实测踩中)。
+                from ..knowledge.retriever import invalidate_shared_retriever
+
+                invalidate_shared_retriever()
+                indexed = "keyword-only"
+                index_warning = f"向量索引失败({str(e)[:80]});条目已落盘,可关键词检索,配额恢复后重建索引即可"
 
         _extraction_jobs[job_id] = {
             "status": "completed",
@@ -285,6 +297,7 @@ async def run_extraction(
                 "file_path": str(out_path.relative_to(settings.project_root)),
                 "yaml_content": yaml_str,
                 "indexed": indexed,
+                "warning": index_warning,
             },
             "error": None,
         }

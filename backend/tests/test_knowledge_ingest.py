@@ -75,6 +75,71 @@ def test_unique_output_path_idempotent(tmp_path):
     assert p.name == "2023研赛B_paper_099.yaml"
 
 
+class _FakeLLM:
+    """返回罐头 JSON 的假 LLM（合法 Paper 必填字段）。"""
+
+    def invoke(self, _msg):
+        class _R:
+            content = '{"year": 2021, "competition": "研赛", "problem_id": "A", "title": "测试论文", "problem_context": "测试上下文"}'
+
+        return _R()
+
+
+class _FakeEmbedder:
+    """add_document 抛错的假嵌入器（模拟 embedding 配额耗尽）。"""
+
+    def __init__(self, fail: bool):
+        self.embeddings = object() if not fail else object()
+        self._fail = fail
+
+    def add_document(self, _path):
+        if self._fail:
+            raise RuntimeError("Error code: 403 - Free quota exhausted")
+
+
+def test_run_extraction_index_failure_still_completes(tmp_path, monkeypatch):
+    """索引失败不得判 job error——YAML 已落盘，降级 keyword-only 并带 warning。"""
+    import asyncio
+
+    kb = tmp_path / "kb"
+    (kb / "papers").mkdir(parents=True)
+
+    class _FakeSettings:
+        kb_root = kb
+        project_root = tmp_path
+        kb_vision_model = ""
+        default_temperature = 0.3
+        default_max_tokens = 1024
+
+    monkeypatch.setattr(ingest, "get_settings", lambda: _FakeSettings())
+    monkeypatch.setattr(ingest, "_get_embedder", lambda _uid: _FakeEmbedder(fail=True))
+    monkeypatch.setattr(
+        "app.core.llm.factory.LLMFactory",
+        lambda: type("F", (), {"create": staticmethod(lambda _r: _FakeLLM())}),
+    )
+
+    job_id = "test_job_idx_fail"
+    ingest.new_job(job_id, "processing")
+    asyncio.run(
+        ingest.run_extraction(
+            job_id=job_id,
+            raw_text="",
+            text_parts=["一篇测试论文的正文"],
+            raw_images=[],
+            raw_file_data=[],
+            kb_type="paper",
+            name_hint="测试论文",
+            user_login="tester",
+        )
+    )
+    job = ingest.get_job(job_id)
+    assert job["status"] == "completed", job.get("error")
+    assert job["result"]["indexed"] == "keyword-only"
+    assert "向量索引失败" in job["result"]["warning"]
+    # YAML 确实落盘
+    assert any((kb / "papers").rglob("*.yaml"))
+
+
 if __name__ == "__main__":
     fns = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     failed = 0

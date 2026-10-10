@@ -1,0 +1,208 @@
+paper:
+  id: paper_020
+  year: 2022
+  competition: 研赛
+  problem_id: B
+  title: 基于整数规划的方形件排样和组批优化问题研究
+  tags:
+    problem_type:
+    - 优化
+    core_models:
+    - 整数线性规划(ILP)
+    - 三阶段齐头切2DCS模型
+    - 凝聚层次聚类
+    - 杰卡德距离
+    techniques:
+    - 三阶段启发式搜索树算法(3-SHST)
+    - FFDH算法
+    - 后序遍历切割树
+    - 贪婪式排列
+    - 类平均距离法
+    - Python3.8实现
+  problem_ref: ''
+  problem_context: 在智能制造背景下，玻璃、PCB板、铝合金门窗等板式产品因定制化程度高，企业普遍采用'多品种小批量'的个性化生产模式。生产过程中需要从一组大的矩形原料板材上按需求切割下一定尺寸、一定数量的小矩形产品项，希望在使用原材料最少的前提下完成订单需求，这就是典型的二维切削库存问题(2DCS)。题目要求解决两个问题：问题一（排样优化）——对数据集A中的每个子集，在满足各子集生产订单需求和三阶段齐头切约束条件下，建立模型并设计算法，使用最少的相同尺寸原板材（2440mm×1220mm）完成订单生产需求，使板材利用率最大化，并按格式输出排样图和排样信息表格。三阶段齐头切约束指：第一阶段横向切割生成stripe（条带），第二阶段纵向切割生成stack（栈），第三阶段横向切割生成item（产品项），同一阶段切割方向相同，切割阶段数不超过3。问题二（订单组批）——对数据集B中的每个子集，在问题一约束基础上增加：每份订单当且仅当出现在一个批次中；每个批次中相同材质的产品项才能使用同一块板材原片排样；每个批次产品项总数不超过1000；每个批次产品项面积总和不超过250m²。要求建立规划模型并设计算法，对全部订单进行组批，然后对每个批次独立排样，使板材原片用量最少。数据集A每个子集约700-800个产品项，需求量均为1；数据集B每个子集包含约18000-28000个产品项、130-192种材料、380-604个订单，数据量远大于A。
+  methodology_chain:
+  - '数据探索与极限分析: 计算各数据集item面积总和，除以原板材面积得到极限最少板材数和极限利用率（如dataA1极限84块、99.45%），作为算法结果的合理性上界'
+  - '数据特征可视化: 用Origin绘制长宽散点频数统计图，发现方形件长宽特征在某些区间高度集中，符合同stack中item长或宽相等的条件'
+  - '问题一整数规划建模: 定义决策变量q(0/1 stack是否被stripe包含)、y(0/1 item是否被stack包含)、x(stack中item个数)、z(stripe中stack个数)，以最小化所有被使用stripe的高度和为目标，建立含6类约束的ILP模型'
+  - '问题一算法设计: 设计三阶段启发式搜索树算法(3-SHST)，基于宽度非递增原则，用贪婪式排列+FFDH算法+后序遍历查找最优插入位置，生成切割树'
+  - '问题一求解与验证: 在dataA1~A4上运行算法，分别使用89、89、89、87块板材，利用率93.87%~94.08%，运行时间0.09~0.13s，输出排样图和CSV表格'
+  - '问题二整数规划建模: 在问题一模型基础上增加决策变量w(0/1 item是否被安排进某原片、订单、批次)，增加批次内item总数≤1000和面积和≤250m²两个约束'
+  - '问题二算法设计: 设计基于生产条件约束的订单层次聚类算法，用杰卡德距离衡量订单间材料种类差异，用类平均距离法计算簇间距离，用凝聚层次聚类自底向上合并订单簇'
+  - '问题二求解与验证: 在dataB1~B5上运行，分别得到55、41、51、44、70个批次，使用3726、2498、2497、2565、4004块板材，利用率77.14%~79.93%，聚类时间10.5~45.8s，排样时间0.7~1.2s'
+  - '结果输出: 所有数据集的排样示意图以.jpg格式输出，排样/组批信息表格以.csv格式输出'
+  key_formulas:
+  - name: 问题一目标函数
+    latex: Z = \min \sum_{l=1}^{d} \sum_{k=1}^{t} \sum_{a=1}^{m} q_{lk}^a L_l
+    description: 最小化所有被使用stripe的高度之和，等价于最小化使用的板材原片数量。q_{lk}^a为0/1变量表示顺序编号为k的stack是否可被编号为a、尺寸类型为l的stripe包含，L_l为stripe的高度
+  - name: item需求满足约束
+    latex: \sum_{l=1}^{d} \sum_{a=1}^{m} \left( \sum_{i=1}^{j} x_{lia}^j + y_{lja}
+      \right) = e_j, \quad j = 1, \ldots, t
+    description: 确保每个尺寸类型为j的item都能被安排e_j次，即所有产品项需求均被满足
+  - name: stack包含于stripe约束
+    latex: \sum_{a=1}^{m} \left( \sum_{k=1}^{i} z_{kia}^l + q_{li}^a \right) = \sum_{a=1}^{m}
+      (y_{lia}), \quad i = 1, \ldots, t; \ l = 1, \ldots, d
+    description: 确保每个被安排的stack都在已使用的stripe内
+  - name: stack宽度约束
+    latex: \sum_{a=1}^{m} w_i z_{kia}^l \leq (W_l - w_k) q_{lk}^a, \quad k = 1, \ldots,
+      t; \ a = 1, \ldots, m; \ l = 1, \ldots, d
+    description: 确保每个被插入的stack的宽度不超过当前尺寸类型为l的stripe的宽度
+  - name: item高度约束
+    latex: \sum_{j=i}^{m} h_j x_{lia}^j \leq (L_l - h_i) y_{lia}, \quad i = 1, \ldots,
+      t; \ a = 1, \ldots, m; \ l = 1, \ldots, d
+    description: 确保每个被插入的item的高度不超过当前尺寸类型为l的stack的高度
+  - name: stack唯一性约束
+    latex: \sum_{l=1}^{d} q_{lia} \leq 1, \quad k = 1, \ldots, t; \ a = 1, \ldots,
+      m
+    description: 确保顺序编号为k的stack不可包含于多种尺寸类型的stripe
+  - name: item唯一性约束
+    latex: \sum_{l=1}^{d} y_{lia} \leq 1, \quad i = 1, \ldots, t; \ a = 1, \ldots,
+      m
+    description: 确保顺序编号为i的item不可包含于多种尺寸类型的stack
+  - name: 批次item总数约束
+    latex: \sum_{j=1}^{b} \sum_{i=1}^{a} w_{ijk}^{lp} G_{ijk}^{lp} \leq 1000, \quad
+      k = 1, \ldots, c; \ p = 1, \ldots, d
+    description: 确保单个批次中item的总数不超过1000个
+  - name: 批次item面积约束
+    latex: \sum_{j=1}^{b} \sum_{i=1}^{a} w_{ijk}^{lp} G_{ijk}^{lp} A_i^l \leq 250,
+      \quad k = 1, \ldots, c; \ p = 1, \ldots, d
+    description: 确保单个批次中所有item的面积总和不超过250m²
+  - name: 杰卡德相似系数
+    latex: J(A,B) = \frac{|A \cap B|}{|A \cup B|}
+    description: 衡量两个订单A、B中item材料种类的交集在并集中所占比例，用于评估订单间材质相似度
+  - name: 杰卡德距离
+    latex: J_\delta(A,B) = 1 - J(A,B) = \frac{|A \cup B| - |A \cap B|}{|A \cup B|}
+    description: 评估两个订单在材质上的区分度，距离越小表示材质越相似
+  - name: 类平均距离法
+    latex: D_{HK} = \frac{1}{n_H n_K} \sum_{i \in H} \sum_{j \in K} d_{ij}^2
+    description: 计算两个订单簇之间的距离，即两个簇之间所有订单相互距离的均值
+  - name: 类平均距离递推公式
+    latex: D_{HK} = \frac{n_I}{n_I + n_J} D_{HI}^2 + \frac{n_J}{n_I + n_J} D_{HJ}^2
+    description: 若K类由I类和J类合并而来，则用此递推公式更新距离矩阵
+  - name: 极限利用率计算
+    latex: \text{极限利用率} = \frac{\text{Area}_i}{\lceil \text{Area}_i / (2440 \times
+      1220 \times 10^{-6}) \rceil \times 2440 \times 1220 \times 10^{-6}}
+    description: 计算各数据集的极限材料利用率，作为算法结果合理性的上界参考
+  algorithm_outline:
+  - language: python
+    description: 三阶段启发式搜索树算法(3-SHST)——问题一核心排样算法，通过后序遍历切割树查找最优插入位置
+    code: "def three_stage_heuristic_search_tree(items, sheet_length=2440, sheet_width=1220):\n\
+      \    # Step 1: 按非递增宽度排列产品项\n    items = sorted(items, key=lambda d: d.width,\
+      \ reverse=True)\n    \n    # Step 2: 初始化根节点（代表整个切割模式）\n    root = TreeNode(sheet_length,\
+      \ sheet_width, depth=-1)\n    \n    # Step 3: 逐个插入产品项\n    for item in items:\n\
+      \        node = TreeNode(item.length, item.width, item=item)\n        root.insert_node(node)\n\
+      \    \n    return root\n\n# TreeNode.insert_node 核心逻辑（递归后序遍历）\ndef insert_node(self,\
+      \ node):\n    # 后序遍历：先递归遍历所有子节点\n    for child in self.childs:\n        if child.insert_node(node):\n\
+      \            return True\n    \n    if self.depth == 3:  # 叶子节点，无法继续\n     \
+      \   return False\n    elif self.depth == 2:  # stack级别，横向切割\n        cur_pos\
+      \ = self.childs[-1].sum + node.width\n        if cur_pos <= self.width and node.length\
+      \ == self.length:\n            node.sum = cur_pos; node.depth = 3\n        \
+      \    self.add_child(node); return True\n    elif self.depth == 1:  # stripe级别，纵向切割\n\
+      \        cur_pos = self.childs[-1].sum + node.length\n        if node.width\
+      \ <= self.width and cur_pos <= self.length:\n            stack = TreeNode(node.length,\
+      \ self.width, depth=2, sum=cur_pos)\n            self.add_child(stack)\n   \
+      \         node.sum = node.width; node.depth = 3\n            stack.add_child(node);\
+      \ return True\n    elif self.depth == 0:  # 原片级别，横向切割\n        cur_pos = self.childs[-1].sum\
+      \ + node.width\n        if cur_pos <= self.width:\n            strip = TreeNode(self.length,\
+      \ node.width, depth=1, sum=cur_pos)\n            self.add_child(strip)\n   \
+      \         stack = TreeNode(node.length, strip.width, depth=2, sum=node.length)\n\
+      \            strip.add_child(stack)\n            node.sum = node.width; node.depth\
+      \ = 3\n            stack.add_child(node); return True\n    else:  # 根节点，需要新原片\n\
+      \        sheet = TreeNode(self.length, self.width, depth=0)\n        self.add_child(sheet)\n\
+      \        strip = TreeNode(sheet.length, node.width, depth=1, sum=node.width)\n\
+      \        sheet.add_child(strip)\n        stack = TreeNode(node.length, strip.width,\
+      \ depth=2, sum=node.length)\n        strip.add_child(stack)\n        node.sum\
+      \ = node.width; node.depth = 3\n        stack.add_child(node); return True\n\
+      \    return False"
+  - language: python
+    description: 基于生产条件约束的订单凝聚层次聚类算法——问题二核心组批算法
+    code: "def cluster_order(orders, num_restriction=1000, area_restriction=250000000,\
+      \ distance_threshold=0.8):\n    # Step 1: 初始化，每个订单自成一类\n    cluster = [[order]\
+      \ for order in orders]\n    \n    # 计算初始杰卡德距离矩阵\n    inial_distance = {}\n \
+      \   for i in range(len(orders)):\n        inial_distance[orders[i].id] = {}\n\
+      \        for j in range(len(orders)):\n            inial_distance[orders[i].id][orders[j].id]\
+      \ = orders[i].jacard_distance(orders[j])\n    \n    flag = True\n    while flag:\n\
+      \        # Step 2: 计算当前簇间类平均距离矩阵\n        distance = cal_distance(cluster, inial_distance)\n\
+      \        distance = sorted(distance, key=lambda d: d[1])\n        \n       \
+      \ for pair in distance:\n            if pair[1] > distance_threshold:\n    \
+      \            flag = False\n                break\n            i, j = (int(num)\
+      \ for num in pair[0].split(\",\"))\n            \n            # Step 3: 检查合并后是否满足生产约束\n\
+      \            cur_num = sum(order.num for order in (cluster[i] + cluster[j]))\n\
+      \            cur_area = sum(order.area for order in (cluster[i] + cluster[j]))\n\
+      \            \n            if cur_num <= num_restriction and cur_area <= area_restriction:\n\
+      \                cluster[i].extend(cluster[j])\n                cluster.remove(cluster[j])\n\
+      \                break\n            else:\n                continue\n    return\
+      \ cluster\n\ndef cal_distance(cluster, inial_distance):\n    # 类平均距离法计算簇间距离\n\
+      \    ret_distance = []\n    for i in range(len(cluster)):\n        for j in\
+      \ range(i + 1, len(cluster)):\n            distance = 0\n            for id_i\
+      \ in [o.id for o in cluster[i]]:\n                for id_j in [o.id for o in\
+      \ cluster[j]]:\n                    distance += inial_distance[id_i][id_j] **\
+      \ 2\n            ret_distance.append((f\"{i},{j}\", math.sqrt(distance / (len(cluster[i])\
+      \ * len(cluster[j])))))\n    return ret_distance"
+  assumption_analysis:
+  - '假设1: 所有订单交货期相同，不做区分 → 合理，简化了时间维度约束，使问题聚焦于空间优化；若放松则需引入交货期约束，变成多时段排产问题'
+  - '假设2: 只考虑齐头切方式（直线切割、垂直于板材一边、每次切割可分离成两块） → 合理，这是工业切割的常见约束；若放松为自由切割则问题变为非齐头切2DCS，求解空间更大但切割工艺更复杂'
+  - '假设3: 切割阶段数不超过3，同一阶段切割方向相同 → 合理，三阶段齐头切在材料利用率和切割复杂度之间取得平衡；若增加阶段数可提高利用率但增加切割成本'
+  - '假设4: 排样方式为精确排样 → 合理，即产品项尺寸与排样尺寸完全一致；若允许误差则需考虑公差'
+  - '假设5: 板材原片仅有一种规格且数量充足 → 合理，题目给定2440mm×1220mm单一规格；若多规格则需增加规格选择决策变量'
+  - '假设6: 不考虑锯缝宽度 → 合理简化，实际切割中锯缝约2-5mm，忽略会略微高估利用率；若考虑则需在尺寸约束中减去锯缝'
+  - '假设7: 数据集A和B各子集独立处理 → 合理，各子集为独立算例；若联合处理则需考虑跨子集的资源分配'
+  reusable_patterns:
+  - '切割树+后序遍历模式: 将二维排样问题转化为多叉树结构，每个节点代表一个矩形区域，通过后序遍历（先子节点后父节点）搜索最优插入位置，适用于任何需要递归空间划分的排样/装箱问题'
+  - '极限利用率上界分析模式: 在求解优化问题前，先计算理论极限值（面积和/板材面积），作为结果合理性检验的基准，避免算法输出超过理论上界的错误结果'
+  - '问题类比迁移模式: 将组批问题类比为排样问题——订单类比item、批次类比原板材、批次内item数量和面积约束类比原板材长宽约束，从而复用已有的求解框架'
+  - '杰卡德距离+凝聚层次聚类模式: 用集合相似度衡量订单间材质差异，用类平均距离法计算簇间距离，在合并时加入生产约束检验，适用于任何带约束的聚类分组问题'
+  - '启发式搜索树+贪婪排列组合模式: 基于宽度非递增原则进行贪婪式排列，结合FFDH算法和后序遍历查找插入位置，适用于NP-hard的二维切割/装箱问题快速求解'
+  - '分阶段求解模式: 将复杂的组批+排样联合优化问题分解为两个独立子问题（先组批后排样），分别设计算法求解，降低问题复杂度，适用于耦合度较高的组合优化问题'
+  common_pitfalls:
+  - mistake: 直接求解整数规划模型导致决策变量爆炸——问题一中决策变量q、y、x、z的数量随item类型数t和stripe类型数d呈指数增长，精确求解不可行
+    solution: 采用启发式算法（如3-SHST）替代精确求解，利用问题结构特征（宽度非递增、三阶段切割）设计高效的搜索策略，在可接受时间内获得近似最优解
+  - mistake: 忽略三阶段齐头切的阶段约束，将问题简化为普通二维装箱——导致排样方案无法按三阶段工艺实际切割
+    solution: 在算法设计中严格保证每个节点的depth对应正确的切割阶段（depth=0为原片横向切割、depth=1为纵向切割、depth=2为横向切割），确保生成的排样方案满足工艺约束
+  - mistake: 组批时只考虑材料相似性而忽略批次容量约束——导致某些批次item数超过1000或面积超过250m²
+    solution: 在聚类合并的每一步都检验生产约束（item总数≤1000、面积和≤250m²），不满足则跳过该合并对，尝试次优合并
+  - mistake: 将组批和排样完全独立优化——组批算法只考虑材料相似性，排样算法只考虑几何排布，两者目标不一致导致最终利用率不高
+    solution: 在组批阶段就考虑排样可行性（如材料种类不宜过多），或在排样后反馈调整组批方案，实现协同优化
+  - mistake: 忽略产品项旋转的可能性——所有产品项固定方向排样，可能浪费空间
+    solution: 在算法中增加旋转判断逻辑，当当前方向无法插入时尝试旋转90度后再判断，可提高利用率（本文承认未考虑旋转是缺点之一）
+  - mistake: 算法只追求局部最优——3-SHST基于构造式算法，缺乏随机性，容易陷入局部最优
+    solution: 将3-SHST构造的解作为初始解，再通过邻域搜索、模拟退火等元启发式方法进一步探索解空间
+  difficulty: 3
+  difficulty_level: hard
+  analysis:
+    problem_summary: 在满足三阶段齐头切工艺约束下，将二维矩形切割库存问题建模为整数规划，设计启发式搜索树算法求解排样优化；在此基础上增加订单组批约束，设计层次聚类算法实现组批与排样的联合优化
+    key_assumptions:
+    - 所有订单交货期相同
+    - 只考虑齐头切方式，切割阶段数不超过3，同阶段切割方向相同
+    - 排样方式为精确排样，不考虑锯缝宽度
+    - 板材原片仅有一种规格(2440mm×1220mm)且数量充足
+    - 数据集A和B各子集独立处理
+    decision_variables: 'q_{lk}^a∈{0,1}: stack是否可被stripe包含; y_{lia}∈{0,1}: item是否可被stack包含;
+      x_{lia}^j∈Z+: stack中item个数; z_{kia}^l∈Z+: stripe中stack个数; w_{ijk}^{lp}∈{0,1}:
+      item是否被安排进原片/订单/批次(问题二新增)'
+    objective: 最小化所有被使用stripe的高度之和，等价于最小化使用的板材原片数量，最大化板材利用率
+    constraints: item需求满足约束、stack包含于stripe约束、stack宽度不超stripe宽度、item高度不超stack高度、stack唯一性约束、item唯一性约束；问题二额外增加：每份订单仅出现在一个批次、同批次同材质才能同板排样、批次item总数≤1000、批次item面积和≤250m²
+  model:
+    approach: 论文采用'建模+启发式算法'的双轨思路。首先建立整数线性规划模型精确描述问题：问题一以最小化使用stripe高度和为目标，定义q、y、x、z四类决策变量，建立含6类约束的ILP模型；问题二在此基础上增加w变量和批次容量约束，建立组批ILP模型。由于ILP直接求解面临变量爆炸问题，论文设计了两阶段启发式算法：问题一采用三阶段启发式搜索树算法(3-SHST)，基于宽度非递增原则，用贪婪式排列+FFDH算法+后序遍历切割树查找最优插入位置；问题二采用基于生产条件约束的订单层次聚类算法，用杰卡德距离衡量订单材质相似度，用类平均距离法计算簇间距离，用凝聚层次聚类自底向上合并订单簇，合并时检验生产约束。最终将组批结果输入3-SHST算法完成排样。
+    innovation: 1) 提出3-SHST算法，将三阶段齐头切排样问题转化为切割树的后序遍历搜索，巧妙规避了ILP决策变量爆炸问题；2) 将组批问题类比为排样问题（订单类比item、批次类比原板材），实现求解框架的迁移复用；3)
+      用杰卡德距离+凝聚层次聚类解决带约束的订单组批问题，在聚类过程中嵌入生产约束检验；4) 将复杂的组批+排样联合优化分解为两个独立子问题分别求解，降低复杂度
+    solution_method: Python3.8实现，运行在12核、睿频4.5GHz的Intel i5-12500H处理器上。问题一：3-SHST算法，dataA1~A4分别使用89、89、89、87块板材，利用率93.87%~94.08%，运行时间0.09~0.13s。问题二：订单层次聚类+3-SHST排样，dataB1~B5分别得到55、41、51、44、70个批次，使用3726、2498、2497、2565、4004块板材，利用率77.14%~79.93%，聚类时间10.5~45.8s，排样时间0.7~1.2s。结果以.jpg排样图和.csv信息表格输出。
+  evaluation:
+    strengths:
+    - 模型建立完整规范，从决策变量、目标函数到约束条件均有详细定义和数学表达
+    - 3-SHST算法设计巧妙，利用切割树后序遍历实现高效搜索，时间复杂度O(m²)，求解速度快
+    - 问题二将组批问题类比为排样问题，实现求解框架的迁移复用，思路新颖
+    - 杰卡德距离+凝聚层次聚类的组批方法合理，在聚类过程中嵌入生产约束检验
+    - 结果验证充分，通过极限利用率分析、排样图与表格对照、具体板材利用率计算等多角度验证
+    - 代码实现完整，提供了Item类、TreeNode类、Order类等完整数据结构和算法实现
+    weaknesses:
+    - 3-SHST算法只能找到局部最优解，缺乏随机性，无法保证全局最优
+    - 未考虑产品项旋转，可能浪费排样空间
+    - 组批和排样分开优化，两个算法目标不一致，导致最终利用率不足
+    - 杰卡德距离仅考虑材料种类，未考虑材料数量、面积等因素，可能不能有效表征订单区分度
+    - 问题二板材利用率(77%~80%)明显低于问题一(93%~94%)，说明组批策略有优化空间
+    - 未与其他算法（如遗传算法、模拟退火）进行对比实验
+    lessons: 这篇论文展示了处理NP-hard组合优化问题的经典范式：先建立精确的整数规划模型以理清问题结构和约束，再针对问题特征设计启发式算法以在可接受时间内获得近似最优解。特别值得学习的是：(1)通过极限分析确定优化上界，为结果验证提供基准；(2)将复杂问题分解为子问题分别求解的策略；(3)利用问题结构特征（如宽度非递增、三阶段切割）设计高效搜索策略；(4)将组批问题类比为排样问题实现方法迁移。同时也要注意其不足：启发式算法容易陷入局部最优，分阶段求解可能导致全局次优，后续可通过协同优化和元启发式方法改进。
+  takeaways: []
+  source: 中国光谷·华为杯第十九届中国研究生数学建模竞赛B题
+  quality_rating: 4

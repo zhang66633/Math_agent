@@ -1,0 +1,172 @@
+paper:
+  id: paper_021
+  year: 2022
+  competition: 研赛
+  problem_id: B
+  title: 方形件组批优化问题
+  tags:
+    problem_type:
+    - 优化
+    core_models:
+    - 全局0-1线性规划模型
+    - 整数线性规划模型
+    - 三阶段排样模型
+    techniques:
+    - MATLAB
+    - intlinprog
+    - 启发式算法
+    - 最低基准线搜索算法
+    - 分层排样算法
+  problem_ref: ''
+  problem_context: 在中国制造2025和碳中和、碳达峰的目标背景下，发展环境保护型、资源节约型的智能制造业已成为制造行业的当务之急。企业面临客户个性化定制需求、订单组批困难且产品质量要求高等问题。原材料费用在生产成本中占比较大，即使原材料利用率有微小差异，材料总用量也会有明显变化，因此优化下料、最大限度提高原材料利用率是企业急需解决的重要问题。本题涉及方形件的排样优化和订单组批优化。排样优化问题（子问题1）：根据题目要求建立混合整数规划模型，给不同产品项进行排版布局，实现板材原片使用最少的目标。约束条件为：相同栈里的产品项宽度（或长度）应相同；最终切割生成的产品项是完整的，非拼接而成。订单组批问题（子问题2）：建立混合整数规划模型，对数据集B中所有订单进行组批，然后对每个批次进行单独排样，在满足子问题1约束条件下，使板材原片用量尽可能少。进一步要求：同一批次中每份订单有且只能出现一次；同一批次中相同材质的产品项才能使用同一块板材原片进行排样；每个批次产品项总数不能超过1000；每个批次产品项的面积总和不能超过250m²。输入数据包括产品的尺寸、编号、材质和订单号，板材原片规格为2440mm×1220mm。期望输出为最优排样方案和订单组批方案，使板材原片使用数量最少、利用率最高。
+  methodology_chain:
+  - '数据预处理: 利用Matlab读取.csv文件，对item_length和item_width列取最小值和最大值，按最大值降序排序，计算所有产品面积之和及理论最少板材数量'
+  - '子问题1建模: 建立全局0-1线性规划模型，引入产品旋转决策变量，以板材原片使用数量最少为目标函数，考虑栈、条带、板材三层约束'
+  - '子问题1求解: 采用启发式算法（传统分层排样与改进最低基准线搜索算法结合），通过条件判断选择利用率最高的排样方式'
+  - '子问题2数据预处理: 按订单号和材质对数据进行排序聚类，统计每个数据中的订单数量和板材材质数量'
+  - '子问题2订单组批建模: 建立以组批系数最大为目标的整数线性规划模型，引入组批系数衡量不同订单相同材质的可组合程度'
+  - '子问题2排样优化建模: 在子问题1模型基础上加入批次和材质约束，建立同批次排样优化模型'
+  - '子问题2求解: 先按组批系数进行订单聚类分组，再对每组进行排样优化，输出组批方案和板材利用率'
+  key_formulas:
+  - name: 产品旋转决策变量
+    latex: r_i = \begin{cases} 1, & \text{第i件产品不旋转90°} \\ 0, & \text{第i件产品旋转90°} \end{cases}
+    description: 引入产品旋转决策变量，允许产品在排样时旋转90°，提高板材利用率
+  - name: 旋转后产品尺寸
+    latex: \begin{cases} A_i = a_i r_i + b_i(1-r_i) \\ B_i = a_i(1-r_i) + b_i r_i
+      \end{cases}
+    description: 计算产品旋转后的长度和宽度，其中a_i和b_i为原始长度和宽度
+  - name: 栈内产品约束
+    latex: -0.25-(1-u_{ji})Q \leq B_i - B_j \leq 0.25+(1-u_{ji})Q
+    description: 确保同一栈内的产品宽度相同（允许0.25mm误差），Q为无穷大数
+  - name: 条带宽度约束
+    latex: \sum_{i=j}^{n} b_i u_{ji} + \sum_{i=j}^{n} (a_i-b_i)\xi_{ji} \leq \sum_{k=1}^{j}
+      B_k v_{kj} + \sum_{k=1}^{j} (a_k-b_k)\eta_{kj}
+    description: 确保条带内所有栈的长度之和不超过条带长度
+  - name: 板材宽度约束
+    latex: \sum_{k=l}^{n} b_k \lambda_{lk} + \sum_{k=l}^{n} (a_k-b_k)\zeta_{lk} \leq
+      A \lambda_{ll}
+    description: 确保同一板材上所有条带的宽度总和不超过板材宽度
+  - name: 组批系数
+    latex: \theta_{d_1 d_2} = \frac{\sum_{e=1}^{M} N_{d_1 d_2 e}}{n_{d_1 e} n_{d_2
+      e}}
+    description: 衡量两个订单中相同材质产品可组合拼接的程度，用于订单组批优化
+  - name: 订单组批目标函数
+    latex: \max \sum_{d_1, d_2} \theta_{d_1 d_2} \sigma_{d_1 d_2}
+    description: 最大化同一批次内不同订单之间的组批系数总和
+  - name: 板材利用率
+    latex: \text{板材利用率} = \frac{\text{产品项面积之和}}{\text{使用板材原片面积之和}}
+    description: 衡量排样方案优劣的核心指标
+  algorithm_outline:
+  - language: python
+    description: 子问题1：改进的最低基准线搜索算法
+    code: "def improved_bottom_left_algorithm(items, board_width=1220, board_height=2440):\n\
+      \    # 步骤1：数据预处理\n    items = preprocess(items)  # 计算min/max列，按max降序排序\n   \
+      \ \n    # 步骤2：初始化\n    boards = []  # 已使用的板材列表\n    remaining_items = items.copy()\n\
+      \    \n    while remaining_items:\n        board = create_new_board()\n    \
+      \    # 步骤3：放置第一个产品在左下角\n        first_item = remaining_items.pop(0)\n      \
+      \  place_item(board, first_item, x=0, y=0)\n        update_baselines(board)\n\
+      \        \n        # 步骤4：循环放置剩余产品\n        while remaining_items:\n        \
+      \    # 搜索最低水平基准线\n            baseline = find_lowest_baseline(board)\n     \
+      \       \n            # 情况1：只有一条最低基准线\n            if count_lowest_baselines(board)\
+      \ == 1:\n                best_item = find_best_match(remaining_items, baseline)\n\
+      \                if best_item and can_place(board, best_item, baseline):\n \
+      \                   place_item(board, best_item, baseline)\n               \
+      \     remaining_items.remove(best_item)\n                    update_baselines(board)\n\
+      \                else:\n                    # 尝试旋转90°\n                    rotated_item\
+      \ = try_rotate(remaining_items, baseline)\n                    if rotated_item:\n\
+      \                        place_item(board, rotated_item, baseline)\n       \
+      \                 remaining_items.remove(rotated_item)\n                   \
+      \     update_baselines(board)\n                    else:\n                 \
+      \       break  # 当前板材无法再放置\n            \n            # 情况2：多条最低基准线\n      \
+      \      elif count_lowest_baselines(board) > 1:\n                best_item =\
+      \ find_best_match_for_multiple(remaining_items, baselines)\n               \
+      \ if best_item:\n                    place_item(board, best_item, best_baseline)\n\
+      \                    remaining_items.remove(best_item)\n                   \
+      \ update_baselines(board)\n            \n            # 情况3：所有最低基准线都放不下\n   \
+      \         else:\n                # 搜索剩余产品并更新基准线\n                if can_rotate_and_place(remaining_items,\
+      \ board):\n                    rotated_item = rotate_and_place(remaining_items,\
+      \ board)\n                    remaining_items.remove(rotated_item)\n       \
+      \             update_baselines(board)\n                else:\n             \
+      \       break\n        \n        boards.append(board)\n    \n    return boards"
+  - language: python
+    description: 子问题2：订单组批与排样优化算法
+    code: "def order_batching_and_layout(data):\n    # 步骤1：数据预处理\n    orders = extract_orders(data)\n\
+      \    materials = extract_materials(data)\n    \n    # 步骤2：计算组批系数矩阵\n    theta\
+      \ = compute_batching_coefficients(orders, materials)\n    \n    # 步骤3：基于组批系数进行订单聚类\n\
+      \    clusters = cluster_orders_by_theta(theta)\n    \n    # 步骤4：对每个聚类进行批次划分\n\
+      \    batches = []\n    for cluster in clusters:\n        batch = []\n      \
+      \  total_items = 0\n        total_area = 0\n        for order in cluster:\n\
+      \            order_items = count_items(order)\n            order_area = compute_area(order)\n\
+      \            if total_items + order_items <= 1000 and total_area + order_area\
+      \ <= 250:\n                batch.append(order)\n                total_items\
+      \ += order_items\n                total_area += order_area\n            else:\n\
+      \                batches.append(batch)\n                batch = [order]\n  \
+      \              total_items = order_items\n                total_area = order_area\n\
+      \        if batch:\n            batches.append(batch)\n    \n    # 步骤5：对每个批次进行排样优化\n\
+      \    results = []\n    for batch in batches:\n        # 按材质分组\n        material_groups\
+      \ = group_by_material(batch)\n        for material, items in material_groups.items():\n\
+      \            boards = improved_bottom_left_algorithm(items)\n            results.append({\n\
+      \                'batch': batch,\n                'material': material,\n  \
+      \              'boards': boards,\n                'utilization': compute_utilization(boards)\n\
+      \            })\n    \n    return results"
+  assumption_analysis:
+  - '假设1: 所有订单的交货期相同 → 合理，简化了调度问题，使问题聚焦于组批和排样优化。如果放松，需要考虑交货期约束，问题变为多目标优化'
+  - '假设2: 只考虑齐头切割方式 → 合理，符合实际工业生产中常见的切割工艺。如果放松，需要考虑非齐头切割，模型复杂度大幅增加'
+  - '假设3: 订单任务全部完成且不含任何不完整订单任务 → 合理，确保所有产品都被排样。如果放松，需要考虑订单取舍问题'
+  - '假设4: 板材的切割阶段数不超过3，处于同一阶段的切割方向一致 → 合理，三阶段切割是常见的工艺约束。如果放松，可以允许更多切割阶段，提高利用率但增加工艺复杂度'
+  - '假设5: 排样方式为精确排样（3E和3H） → 合理，确保产品完整切割。如果放松，允许非精确排样，可能提高利用率但需要额外切割'
+  - '假设6: 板材原片仅有一种规格且数量充足 → 合理，简化了问题。如果放松，需要考虑多种规格板材的选择问题'
+  - '假设7: 排样方案不用考虑锯缝宽度影响 → 合理，简化计算。如果放松，需要考虑锯缝宽度，降低实际利用率'
+  reusable_patterns:
+  - '可复用模式1: 三层决策变量建模方法——将排样问题分解为产品-栈-条带-板材四个层级，每层引入0-1决策变量，通过约束条件连接各层，适用于任何分层排样问题'
+  - '可复用模式2: 产品旋转决策变量的引入——通过0-1变量控制产品是否旋转90°，将非线性旋转问题转化为线性约束，可迁移到任何允许旋转的排样问题'
+  - '可复用模式3: 组批系数设计——通过计算不同订单间相同材质产品的可组合程度，将订单组批问题转化为最大化组批系数的优化问题，可迁移到任何需要聚类的组合优化问题'
+  - '可复用模式4: 启发式算法与精确算法结合——先用启发式算法快速生成可行解，再用整数规划精确求解，平衡求解速度和解的质量'
+  - '可复用模式5: 双算法对比选择策略——同时运行传统分层排样和改进最低基准线搜索算法，取利用率最高的方案，确保解的质量'
+  common_pitfalls:
+  - mistake: 忽略产品旋转的可能性，导致板材利用率偏低
+    solution: 引入旋转决策变量r_i，在模型中允许产品旋转90°，可显著提高利用率（论文中从2块板减少到1块板）
+  - mistake: 在订单组批时仅考虑订单数量约束，忽略材质约束
+    solution: 必须确保同一批次内相同材质的产品才能使用同一块板材，在模型中引入材质匹配约束
+  - mistake: 模型变量过多导致求解时间过长
+    solution: 采用启发式算法先进行预处理和分组，减少整数规划模型的规模；或采用列生成等高级算法
+  - mistake: 忽略批次面积和数量上限约束
+    solution: 在组批模型中明确加入每个批次产品项总数≤1000和面积总和≤250m²的约束
+  - mistake: 排样时未考虑一刀切约束
+    solution: 采用三阶段排样方式，确保每次切割都是直线且垂直于板材边，满足齐头切割工艺要求
+  difficulty: 3
+  difficulty_level: hard
+  analysis:
+    problem_summary: 方形件组批优化问题本质是二维矩形件排样优化与订单组批优化的组合问题，需要在满足三阶段齐头切割工艺约束下，最小化板材原片使用数量
+    key_assumptions:
+    - 所有订单交货期相同
+    - 只考虑齐头切割方式
+    - 订单任务全部完成
+    - 切割阶段数不超过3且同阶段方向一致
+    - 排样方式为精确排样（3E和3H）
+    - 板材原片仅一种规格且数量充足
+    - 不考虑锯缝宽度影响
+    decision_variables: r_i（产品是否旋转）、u_ji（产品i是否在栈j中）、v_kj（栈j是否在条带k中）、λ_lk（条带k是否在板材l上）、ξ_ji、η_kj、ζ_lk（辅助0-1变量）
+    objective: 子问题1：最小化板材原片使用数量；子问题2：最大化组批系数（订单组批）+ 最小化板材使用数量（排样优化）
+    constraints: 栈内产品宽度相同、条带长度约束、板材宽度约束、产品完整性约束、订单唯一性约束、材质匹配约束、批次数量上限1000、批次面积上限250m²
+  model:
+    approach: 论文采用分层建模思路，将排样问题分解为产品-栈-条带-板材四个层级。首先建立全局0-1线性规划模型，以板材使用数量最少为目标，引入产品旋转决策变量提高利用率。然后针对订单组批问题，建立以组批系数最大为目标的整数线性规划模型，通过组批系数衡量不同订单相同材质产品的可组合程度。最后在同批次内建立排样优化模型，在满足子问题1所有约束基础上加入批次和材质约束。求解时采用启发式算法（传统分层排样与改进最低基准线搜索算法结合）与整数规划相结合的方法。
+    innovation: 最突出的创新点是在参考文献[3]的整数线性规划模型基础上，引入了产品旋转决策变量，允许产品在排样时旋转90°，显著提高了板材利用率。论文中通过对比实验证明，考虑旋转后原本需要2块板材的排样方案只需1块板材。此外，提出了组批系数的概念，用于量化不同订单间相同材质产品的可组合程度，有效提高了订单组批效率。
+    solution_method: 使用MATLAB编写算法，调用intlinprog求解整数线性规划模型。子问题1采用启发式算法（传统分层排样与改进最低基准线搜索算法结合），通过条件判断选择利用率最高的排样方式。子问题2先按组批系数进行订单聚类分组，再对每组进行排样优化。
+  evaluation:
+    strengths:
+    - 模型完整，考虑了产品旋转、三阶段切割、材质匹配等多种实际约束
+    - 提出了组批系数概念，有效量化了订单间的可组合程度
+    - 采用双算法对比选择策略，确保解的质量
+    - 结果详实，给出了所有数据集的详细排样方案和利用率
+    - 模型复杂度控制在O(n²)，具有较好的可扩展性
+    weaknesses:
+    - 算法执行时间较长，对于大规模问题可能效率不足
+    - 未考虑锯缝宽度影响，实际应用中可能存在偏差
+    - 启发式算法可能陷入局部最优，未采用元启发式算法进一步优化
+    - 订单组批模型未考虑交货期等实际约束
+    - 论文中部分公式推导过程不够详细，可复现性有待提高
+    lessons: 这篇论文展示了如何将复杂的二维排样问题分解为分层决策问题，通过引入巧妙的决策变量（如产品旋转变量、组批系数）将非线性问题转化为线性规划问题。最重要的启示是：在建模时充分考虑实际约束（如产品可旋转、材质匹配），可以显著提高模型的实际应用价值。同时，启发式算法与精确算法的结合是解决大规模组合优化问题的有效策略。
+  takeaways: []
+  source: 中国光谷·华为杯第十九届中国研究生数学建模竞赛B题
+  quality_rating: 4

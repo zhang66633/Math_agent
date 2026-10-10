@@ -184,4 +184,18 @@ flowchart TD
   搜索命中、卡片详情返回 unit_id。23 个测试文件全过。
 - 完整映射表与决策记录：[plan-c-content-merge.md](./plan-c-content-merge.md)。
 
-**至此审查报告 P0 级问题全部清零**；P1 剩余项（依赖/部署配置/前端测试）见上文。
+### 追加轮（2026-10：emoji 替换 / 前端测试基建 / 资源搜索）
+
+- `7dc1c62` 前端约 60 处 emoji 全部替换为 lucide-vue-next 图标（25 文件）：
+  AgentIdentity 改 icon 字段、成就系统改「后端语义 key + 前端映射组件」、
+  首页流水线图/三角色卡/学习/练习/档案/知识库各页面、导览文案。
+- `a0709bc` 前端测试基建：vitest + jsdom 落地；markdown 安全管道 15 例
+  （XSS 六类载荷 + 白名单防漂移 + KaTeX + TOC）、request 401 处理 6 例
+  （JWT 注入/清会话/白名单/防重入）；CI frontend job 增加 pnpm test。
+- `64b924c` 外部资源索引：firecrawl 8 路深度搜索整理（国赛 2026 真题 /
+  COMAP 美赛结果 / zhanwen-MathModel 论文库 / 数据集五源 / DataWhale 教程 /
+  CUMCMThesis 2026 模板 / 视频课程），落成 docs/resources/README.md，
+  含按价值排序的五个可执行动作（papers 17→30+ 导入计划等）。
+
+**至此审查报告 P0 级问题全部清零**；P1 剩余项（compose 合并需 Docker 环境）
+见上文；前端测试覆盖 markdown 安全管道与 API 层，后续可扩展至组件测试。

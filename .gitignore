@@ -66,6 +66,9 @@ backend/_start.bat
 # pnpm store 残留
 .pnpm-store/
 
+# firecrawl CLI 本地缓存（搜索结果原始数据）
+.firecrawl/
+
 
 # ��Ŀ���⻷��
 .venv/

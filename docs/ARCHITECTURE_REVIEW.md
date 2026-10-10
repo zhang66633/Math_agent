@@ -213,5 +213,21 @@ flowchart TD
   CUMCMThesis 2026 模板 / 视频课程），落成 docs/resources/README.md，
   含按价值排序的五个可执行动作（papers 17→30+ 导入计划等）。
 
-**至此审查报告 P0 级问题全部清零**；P1 剩余项（compose 合并需 Docker 环境）
-见上文；前端测试覆盖 markdown 安全管道与 API 层，后续可扩展至组件测试。
+### 资源导入与嵌入链路（2026-10 续）
+
+- `b8c5fe7` ingest 输出文件名去重（同题多篇不再互相覆盖）+ 3 单测。
+- `8a479e7` 索引韧性修复：embedding 失败（配额 403）不再把 job 判 error，
+  降级 keyword-only + warning（此前误报「导入失败」且重试产生重复条目，
+  本次实测踩中后修复）。
+- `dcf6601`/`ab0a090`/`8a479e7`/`72a7fdb` 四批论文入库（2023 研赛 ×2、
+  2022 研赛 ×3、2021 研赛 ×3、2020 研赛 ×3，含重复条目清理与题号人工
+  校正——2021 研赛 A 题经官方题单双源核实，LLM 六次提取全误作 B/D），
+  papers 17 → 29。
+- 嵌入链路换 key：学校 New API relay 新 token 经单条+批量实测后写入
+  .env 与 apikeys.json 两个域的 embedding key（原阿里云百炼 key 免费额度
+  耗尽、原 relay token 失效，均已替换）；全量索引重建 156 文档与 KB
+  一致，混合检索恢复（语义查询命中新论文前列）。
+
+**至此审查报告 P0 级问题全部清零**；P1 剩余项（compose 运行时真机验证
+需 Docker 守护进程）见上文；前端测试覆盖 markdown 安全管道与 API 层，
+后续可扩展至组件测试。

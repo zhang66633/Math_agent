@@ -18,22 +18,26 @@ def test_all_roles_have_units():
         assert len(ALL_UNITS[role]) > 0, f"{role} 角色应有学习单元"
 
 
-def test_every_unit_has_content_file():
-    # 每个单元都应有独立的 content/<role>/<unit_id>.md 内容文件
+def test_every_unit_has_content():
+    """每个单元都必须有正文——方案 C 后来源有二：卡片 content_md（已迁移）
+    或 content/<role>/<unit_id>.md（保留文件形态的单元）。"""
+    from app.learning.unit_content import _card_content_by_unit
+
+    card_content = _card_content_by_unit()
     for role, units in ALL_UNITS.items():
         for u in units:
-            p = CONTENT_DIR / role / f"{u.unit_id}.md"
-            assert p.exists(), f"{u.unit_id} 缺少内容文件 {p}"
+            has_file = (CONTENT_DIR / role / f"{u.unit_id}.md").exists()
+            has_card = u.unit_id in card_content
+            assert has_file or has_card, f"{u.unit_id} 既无内容文件也无卡片长文"
 
 
 def test_unit_content_rich():
-    # 内容文件应足够丰富(≥1000 字符),不得是占位文本
-    for role, units in ALL_UNITS.items():
-        for u in units:
-            p = CONTENT_DIR / role / f"{u.unit_id}.md"
-            text = p.read_text(encoding="utf-8")
-            assert len(text) >= 1000, f"{u.unit_id} 内容过于单薄({len(text)} 字符)"
-            assert "内容正在编写中" not in text, f"{u.unit_id} 仍是占位内容"
+    """单元正文（无论来自卡片还是文件）应足够丰富，不得是占位文本。"""
+    for role_units in ALL_UNITS.values():
+        for u in role_units:
+            assert len(u.content_md) >= 1000, f"{u.unit_id} 内容过于单薄({len(u.content_md)} 字符)"
+            assert "内容正在编写中" not in u.content_md, f"{u.unit_id} 仍是占位内容"
+            assert "学习资料正在准备中" not in u.content_md, f"{u.unit_id} 仍是占位内容"
 
 
 def test_unit_content_backed():
@@ -55,7 +59,7 @@ def test_generate_and_lookup():
 
 if __name__ == "__main__":
     test_all_roles_have_units()
-    test_every_unit_has_content_file()
+    test_every_unit_has_content()
     test_unit_content_rich()
     test_unit_content_backed()
     test_generate_and_lookup()

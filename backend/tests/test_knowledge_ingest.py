@@ -54,6 +54,27 @@ def test_parse_llm_json_garbage_returns_empty():
     assert ingest.parse_llm_json("完全没有 JSON") == {}
 
 
+def test_unique_output_path_no_collision(tmp_path):
+    """无同名文件 → 基础名，不带 entry_id 后缀。"""
+    p = ingest._unique_output_path(tmp_path, "2023研赛B", "paper_099")
+    assert p.name == "2023研赛B.yaml"
+
+
+def test_unique_output_path_collision_appends_entry_id(tmp_path):
+    """同名已存在 → 追加 entry_id（同题多篇不再互相覆盖）。"""
+    (tmp_path / "2023研赛B.yaml").write_text("existing", encoding="utf-8")
+    p = ingest._unique_output_path(tmp_path, "2023研赛B", "paper_099")
+    assert p.name == "2023研赛B_paper_099.yaml"
+
+
+def test_unique_output_path_idempotent(tmp_path):
+    """带后缀的文件也已存在 → 仍返回该路径（重复导入同一来源=幂等更新）。"""
+    (tmp_path / "2023研赛B.yaml").write_text("a", encoding="utf-8")
+    (tmp_path / "2023研赛B_paper_099.yaml").write_text("b", encoding="utf-8")
+    p = ingest._unique_output_path(tmp_path, "2023研赛B", "paper_099")
+    assert p.name == "2023研赛B_paper_099.yaml"
+
+
 if __name__ == "__main__":
     fns = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     failed = 0

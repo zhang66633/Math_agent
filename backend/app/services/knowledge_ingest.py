@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import yaml
 
@@ -31,6 +32,20 @@ def new_job(
 def get_job(job_id: str) -> dict | None:
     """查询 job 状态；不存在返回 None（路由层转 404）。"""
     return _extraction_jobs.get(job_id)
+
+
+def _unique_output_path(out_dir: Path, safe_name: str, entry_id: str) -> Path:
+    """输出路径去重：同名文件已存在时追加 entry_id，避免同题多篇互相覆盖。
+
+    2026-10 教训：批量导入同一赛题的多篇优秀论文时，各篇的输出文件名
+    完全相同（如 2023研赛B.yaml），后导入的静默覆盖先导入的——导了三篇
+    只剩一篇，且 job 状态全是 completed，无从察觉。追加 entry_id 后每篇
+    独立落盘；重复导入同一来源时仍会更新同一文件（幂等）。
+    """
+    candidate = out_dir / f"{safe_name}.yaml"
+    if not candidate.exists():
+        return candidate
+    return out_dir / f"{safe_name}_{entry_id}.yaml"
 
 
 async def run_extraction(
@@ -235,7 +250,7 @@ async def run_extraction(
             out_dir = settings.kb_root / subdir
 
         out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / f"{safe_name}.yaml"
+        out_path = _unique_output_path(out_dir, safe_name, entry_id)
         out_path.write_text(yaml_str, encoding="utf-8")
 
         # Save raw text alongside the YAML for dual-view

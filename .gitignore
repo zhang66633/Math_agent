@@ -69,6 +69,10 @@ backend/_start.bat
 # firecrawl CLI 本地缓存（搜索结果原始数据）
 .firecrawl/
 
+# 知识库导入流水线的原始资料附件与原文转储（YAML 才是真源，附件体积大且可重新导入）
+backend/knowledge_base/**/*_attachments/
+backend/knowledge_base/**/*.raw.txt
+
 
 # ��Ŀ���⻷��
 .venv/

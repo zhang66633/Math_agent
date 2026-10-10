@@ -1,0 +1,186 @@
+paper:
+  id: paper_018
+  year: 2023
+  competition: 研赛
+  problem_id: B
+  title: 大规模创新类竞赛评审方案研究（0-1规划与标准分路线）
+  tags:
+    problem_type:
+    - 优化
+    - 评价
+    - 综合
+    core_models:
+    - 0-1整数规划
+    - 交叉分发模型
+    - Box-Cox变换
+    - 标准分模型
+    - 双样本t检验
+    - 动态加权评分模型
+    - 梯度下降法
+    - 极差调整模型
+    techniques:
+    - 贪心算法
+    - 动态规划
+    - 广度优先搜索
+    - Pearson相关性检验
+    - 匹配函数
+    - 指数权重模型
+    - Softmax归一化
+  problem_ref: ''
+  problem_context: 大规模创新类竞赛（如研究生数学建模竞赛）的评审面临核心挑战：创新类作品没有标准答案，评审专家需根据命题人提供的评审框架独立评审，导致同一作品不同评委评分差异大。当竞赛规模大（如3000支参赛队、125位评审专家），评审过程变得复杂，极差问题突出。现有评审方案偏简单，仅依据多位评委评分总和排序不可行，无法全面反映作品质量。问题要求建立数学模型解决四个子问题：(1)设计最优'交叉分发方案'，确保每份作品由5位专家独立评审，增加评审专家之间的可比性，同时考虑回避制度（专家不能评阅本校作品）；(2)改进标准分评分模型，解决标准分假设不成立的问题，分析专家和作品成绩分布特点，设计新的标准分计算模型；(3)分析两阶段评审方案相比不分阶段评审方案的优劣，建立'极差'模型发掘创新论文，处理第一评审阶段中的'大极差'作品；(4)建立完整的评审模型评估创新类竞赛作品，提出改进现行评审方案的具体建议。输入数据包括附件1（专家评审作品数据）、附件2（模拟数据2.1和2.2，含两阶段评审成绩）。期望输出为科学的评分排序策略，保证评审的公正性、公平性和科学性。
+  methodology_chain:
+  - '问题一建模: 定义可比性两个因素（交集元素总和与交集集合数），构建0-1矩阵P，将双目标优化转化为单目标优化'
+  - '问题一求解: 证明||PPT||₁恒为75000，简化为最大化||PPT||₀，采用动态规划初始化+贪心算法优化+广度优先搜索检验连通性'
+  - '问题二数据分析: 对专家评分进行双样本t检验，发现专家评审作品集与全集不属于同一分布'
+  - '问题二模型构建: 设计正态化标准分模型（Box-Cox变换）、归一化标准分模型、组合优化标准分模型三种方案'
+  - '问题二评价: 引入匹配函数和匹配度概念，对比三种方案与原始标准分方案的匹配率，选出组合优化标准分模型最优'
+  - '问题三数据分析: 对比两阶段成绩整体变化和极差整体变化，发现第二阶段极差提高1个数量级，极差与创新性呈正相关'
+  - '问题三模型构建: 设计多步极差调整策略，通过阈值判断和均值/中位数关系调整离群点，稳定极差在30以下'
+  - '问题四模型构建: 引入专家标准分偏移程度和评分方差两个指标，构建含Z检验的指数权重模型'
+  - '问题四优化求解: 以指数参数和专家比重为决策变量，匹配率为目标函数，采用梯度下降法求解最优参数'
+  - '模型验证: 将动态加权评分模型与原始排序对比，一等奖匹配率从27.54%提升至43.48%'
+  key_formulas:
+  - name: 交集元素总和
+    latex: \max \|PP^T\|_1
+    description: 所有专家评审作品集合交集元素个数总和，表示不同专家之间的交流次数
+  - name: 交集集合数
+    latex: \max \|PP^T\|_0
+    description: 所有交集集合数，表示交集中的对比人数，即专家之间有共同评审作品的对数
+  - name: 标准分计算公式
+    latex: x_k = 50 + 10 \times \frac{a_k - \bar{a}}{s}
+    description: 原始标准分计算方法，将每位专家的评分标准化到均值50、标准差10的分布
+  - name: Box-Cox变换
+    latex: y_i^{(\lambda)} = \begin{cases} \frac{y_i^{\lambda}-1}{\lambda} & \text{if
+      } \lambda \neq 0 \\ \ln y_i & \text{if } \lambda = 0 \end{cases}
+    description: 正态化标准分模型的核心变换，将偏正态分布数据调整为近似正态分布
+  - name: 归一化标准分
+    latex: x_k = 30 + 60 \times \frac{a_k - \min a_k}{\max a_k - \min a_k} \in [30,
+      90]
+    description: 归一化标准分模型，将标准分映射到[30,90]区间
+  - name: 组合优化模型
+    latex: M = \alpha T + (1-\alpha) Q
+    description: 融合正态化标准分T和归一化标准分Q的组合优化模型，α为权重参数
+  - name: 匹配函数
+    latex: f = \begin{cases} 10 & \text{一等奖匹配成功} \\ 5 & \text{二等奖匹配成功} \\ 2 & \text{三等奖匹配成功}
+      \end{cases}
+    description: 量化比较不同方案与最终评审结果的匹配程度
+  - name: 双样本t检验统计量
+    latex: t = \frac{\bar{X}_1 - \bar{X}_2}{\sqrt{\frac{(n_1-1)S_1^2 + (n_2-1)S_2^2}{n_1+n_2-2}(\frac{1}{n_1}+\frac{1}{n_2})}}
+    description: 检验两阶段评审成绩与最终成绩是否存在显著性差异
+  - name: 极差调整公式
+    latex: P_{ij} = \frac{\text{Max}(P_{ij}) + P_j}{2} \quad \text{OR} \quad P_{ij}
+      = \frac{\text{Min}(P_{ij}) + P_j}{2}
+    description: 多步极差调整策略中，将离群点向均值方向调整的更新公式
+  - name: 专家偏移程度
+    latex: \Delta u_i = \frac{1}{n-1}\sum_{j=1}^{n}(u_{ij}-\bar{u}_i)^2
+    description: 专家标准分与文章标准分均值的偏移程度，衡量专家评分偏移
+  - name: 专家评分方差
+    latex: S_i^2 = \frac{1}{n-1}\sum_{j=1}^{n}(u_{ij}-\bar{u})^2
+    description: 专家作品评分集的方差，衡量专家评分的离散程度
+  - name: 修正Z检验统计量
+    latex: Z_i = \frac{\Delta u_i}{S_i / \sqrt{n}}
+    description: 修正的Z检验统计量，用于构建专家权重指数模型
+  - name: 权重指数模型
+    latex: w_i = \frac{1}{\kappa} e^{-Z_i/\kappa}
+    description: 含Z检验的指数模型，计算每位专家的权重
+  - name: 动态加权评分模型
+    latex: S = W_1 S_1 + W_2 S_2 + W_3 S_3 + W_4 S_4 + W_5 S_5
+    description: 最终论文成绩修正模型，加权融合5位专家的评分
+  - name: 最终成绩融合
+    latex: Y = C \cdot P_1 W + (1-C) \cdot P_2 W
+    description: 融合网评和会评成绩的最终评分模型，C为网评比重
+  algorithm_outline:
+  - language: python
+    description: 贪心算法优化交叉分配方案
+    code: "def greedy_cross_assignment():\n    P = np.zeros((125, 3000))  # 初始化零矩阵\n\
+      \    D = {i: 5 for i in range(3000)}  # 每队初始需被评阅5次\n    for i in range(125):\
+      \  # 遍历每位专家\n        # 选择剩余次数最多的120支队伍\n        selectable = [j for j in range(3000)\
+      \ if D[j] == max(D.values())]\n        if len(selectable) < 120:\n         \
+      \   # 从第二大剩余次数中补足\n            selectable += [j for j in range(3000) if D[j]\
+      \ == max(D.values())-1]\n        selected = random.sample(selectable, 120)\n\
+      \        P[i, selected] = 1\n        for j in selected:\n            D[j] -=\
+      \ 1\n    # 贪心优化：交换元素位置以最大化||PPT||_0\n    T0 = np.sum(np.matmul(P, P.T))\n  \
+      \  K0 = np.count_nonzero(np.matmul(P, P.T))\n    for i in range(125):\n    \
+      \    for j in range(3000):\n            if P[i, j] == 1:\n                #\
+      \ 尝试移动到相邻位置\n                P_new = P.copy()\n                P_new[i, j] =\
+      \ 0\n                P_new[i, (j+1)%3000] = 1\n                T_new = np.sum(np.matmul(P_new,\
+      \ P_new.T))\n                K_new = np.count_nonzero(np.matmul(P_new, P_new.T))\n\
+      \                if T_new * K_new > T0 * K0:\n                    T0, K0 = T_new,\
+      \ K_new\n                    P = P_new\n    return P"
+  - language: python
+    description: 多步极差调整策略
+    code: "def multi_step_range_adjustment(P, epsilon=10):\n    \"\"\"P: 作品评分矩阵 (n_works,\
+      \ 5)\"\"\"\n    while True:\n        flag = 0  # 标记是否有调整\n        for i in range(len(P)):\n\
+      \            if np.max(P[i]) - np.min(P[i]) > epsilon:\n                flag\
+      \ = 1\n                if np.median(P[i]) > np.mean(P[i]):\n               \
+      \     # 中位数大于均值，调整最小值\n                    P[i, np.argmin(P[i])] = (np.min(P[i])\
+      \ + np.mean(P[i])) / 2\n                else:\n                    # 中位数小于均值，调整最大值\n\
+      \                    P[i, np.argmax(P[i])] = (np.max(P[i]) + np.mean(P[i]))\
+      \ / 2\n        if flag == 0:\n            break\n    return P"
+  - language: python
+    description: 梯度下降法求解动态加权模型参数
+    code: "class DynamicWeightModel(nn.Module):\n    def __init__(self, Z):\n    \
+      \    super().__init__()\n        self.z = torch.tensor(Z, dtype=torch.float32)\n\
+      \        self.C = nn.Parameter(torch.tensor(0.3))  # 网评比重\n        self.k =\
+      \ nn.Parameter(torch.randn(1))  # 指数参数\n        self.softmax = nn.Softmax()\n\
+      \    \n    def forward(self, x1, x2):\n        w = torch.exp(-self.z / self.k)\
+      \ / self.k\n        w = self.softmax(w)\n        return torch.matmul(x1, w)\
+      \ * self.C**2 + torch.matmul(x2, w) * (1 - self.C*2)\n\n# 训练\nnet = DynamicWeightModel(Z)\n\
+      optimizer = torch.optim.SGD(net.parameters(), lr=0.1)\nloss_fn = nn.MSELoss()\n\
+      for epoch in range(100):\n    out = net(x1, x2)\n    loss = loss_fn(out, y)\n\
+      \    optimizer.zero_grad()\n    loss.backward()\n    optimizer.step()"
+  assumption_analysis:
+  - '假设1: 每个专家评阅相互独立，互不影响 → 合理，实际评审中专家独立打分是基本要求。如果放松（专家可交流），则评分相关性增加，标准分假设可能更成立，但会引入串通风险。'
+  - '假设2: 各评阅专家分配评阅的作品是均匀的 → 合理，这是公平性的基本要求。如果放松，某些专家评阅过多或过少，会导致工作量不均和评分偏差。'
+  - '假设3: 每个专家的学术水平相同 → 简化假设，实际中专家水平有差异。如果放松，需要引入专家能力权重，但难以量化。'
+  - '假设4: 论文是随机发放的 → 合理，随机分配是保证公平性的基础。如果放松（按主题分配），可能导致系统性偏差。'
+  reusable_patterns:
+  - '可复用模式1: 将双目标优化转化为单目标优化——通过理论证明其中一个目标为恒定值（如||PPT||₁=75000），从而简化模型。这种''先证明不变量，再优化剩余目标''的思路可迁移到其他多目标问题。'
+  - '可复用模式2: 匹配度评价框架——当无法直接验证模型优劣时，引入''匹配函数''将预测结果与已知高质量结果（如最终获奖名单）对比，量化评价不同方案的优劣。适用于任何需要间接验证的排序/评价问题。'
+  - '可复用模式3: 多步迭代调整策略——对于存在离群点的数据，采用''阈值判断+逐步调整''的迭代方法，每次只调整最离群的点，直到满足条件。适用于任何需要稳健化的评分数据。'
+  - '可复用模式4: 指数权重融合模型——将多个评价指标（偏移程度、方差）通过指数函数融合为统一权重，再通过Softmax归一化。适用于多指标综合评价问题。'
+  - '可复用模式5: 两阶段评审的极差分析——通过对比两阶段极差分布，发现第二阶段极差扩大1个数量级，揭示极差与创新性的正相关关系。这种''用统计量变化推断潜在变量''的思路可迁移到其他评审/评价场景。'
+  common_pitfalls:
+  - mistake: 直接对原始评分求标准分而不检验分布假设——标准分假设数据近似正态分布，但实际专家评分可能严重偏态。
+    solution: 先进行正态性检验（如Shapiro-Wilk检验或Q-Q图），若偏态严重则采用Box-Cox变换或归一化方法。
+  - mistake: 忽略回避制度约束——在实际评审中，专家不能评阅本校作品，若忽略此约束会导致方案不可行。
+    solution: 在0-1矩阵中增加约束条件：对于同校作品，P_ij=0。可通过增加虚拟变量或修改可行域实现。
+  - mistake: 极差调整时只调整最大值或只调整最小值——实际中可能同时存在极高和极低离群点。
+    solution: 采用多步迭代策略，每次根据均值与中位数的关系决定调整方向，兼顾两端离群点。
+  - mistake: 动态加权模型中专家权重未归一化——导致权重之和不为1，最终成绩量纲错误。
+    solution: 使用Softmax函数对权重进行归一化，确保ΣW_i=1。
+  - mistake: 匹配度评价时只关注总体匹配率——忽略了一等奖等重要奖项的匹配率。
+    solution: 分奖项计算匹配率，特别关注一等奖的匹配效果，因为其重要程度最高。
+  difficulty: 3
+  difficulty_level: hard
+  analysis:
+    problem_summary: 设计大规模创新类竞赛的评审方案，解决专家评分差异大、极差突出、标准分假设不成立等问题，建立科学的评分排序策略。
+    key_assumptions:
+    - 专家评阅相互独立
+    - 作品均匀分配
+    - 专家学术水平相同
+    - 论文随机发放
+    decision_variables: P_ij (0-1矩阵，表示第i个专家是否评阅第j个作品)；α (组合优化权重)；κ (指数分布参数)；C (网评专家比重)
+    objective: 最大化评审专家之间的可比性（交集元素总和与交集集合数）；最大化改进方案与最终评审结果的匹配度；最小化极差；最大化动态加权模型的匹配率
+    constraints: 每份作品由5位专家评审；每位专家评审120份作品；回避制度（专家不能评阅本校作品）；PPT矩阵单连通；0<α<1；0<C<1
+  model:
+    approach: 本文采用'问题分解+模型链'的整体思路。问题一构建0-1矩阵P，将双目标优化（最大化交集元素总和与交集集合数）通过理论证明简化为单目标优化（最大化||PPT||₀），并加入回避约束，采用贪心算法求解。问题二通过双样本t检验发现标准分假设不成立，设计三种改进方案（正态化、归一化、组合优化），引入匹配函数量化评价，选出组合优化模型最优。问题三分析两阶段评审的极差变化，发现极差与创新性正相关，设计多步极差调整策略。问题四构建动态加权评分模型，引入专家偏移程度和评分方差两个指标，通过指数函数融合为权重，以匹配率为目标函数，采用梯度下降法求解最优参数。整体形成从'分配方案→评分模型→极差调整→动态加权'的完整评审体系。
+    innovation: 最突出的创新点有三：(1)通过理论证明||PPT||₁恒为75000，将双目标优化简化为单目标优化，大幅降低求解难度；(2)引入匹配函数和匹配度概念，量化评价不同评审方案的优劣，为模型选择提供客观标准；(3)设计动态加权评分模型，通过指数函数融合专家偏移程度和评分方差，实现专家权重的自适应调整。
+    solution_method: 使用Python编程，主要库包括NumPy（矩阵运算）、PyTorch（梯度下降优化）、Pandas（数据处理）、Matplotlib（可视化）。问题一采用贪心算法+广度优先搜索；问题二采用Box-Cox变换和归一化方法；问题三采用多步迭代调整；问题四采用梯度下降法（SGD优化器）。
+  evaluation:
+    strengths:
+    - 问题一通过严格理论推导证明||PPT||₁恒为75000，将双目标优化简化为单目标，数学严谨性强
+    - 引入匹配函数和匹配度概念，为不同评审方案的量化比较提供了客观标准
+    - 问题三发现极差与创新性的正相关关系，为发掘创新论文提供了新视角
+    - 问题四的动态加权模型通过梯度下降法自动优化参数，避免了主观设定权重
+    - 整体论文结构完整，从分配方案到评分模型再到动态调整，形成闭环
+    weaknesses:
+    - 问题一的贪心算法可能陷入局部最优，未与全局最优解进行对比验证
+    - 问题二的匹配度评价仅基于附件1数据，样本量有限，结论的泛化性需进一步验证
+    - 问题三的极差调整阈值ε的选取缺乏理论依据，可能影响调整效果
+    - 问题四的梯度下降法对初始值敏感，未讨论参数收敛性和唯一性
+    - 论文未讨论计算复杂度，对于更大规模问题（如10000支队伍）的可行性未验证
+    lessons: 这篇论文展示了如何将复杂的评审问题分解为四个子问题，并分别建立数学模型。最重要的启示是：当面对多目标优化时，先尝试证明某些目标为恒定值，从而简化问题；当无法直接验证模型优劣时，引入间接评价指标（如匹配度）；当数据存在离群点时，采用迭代调整策略而非一次性处理。此外，论文将理论推导（如||PPT||₁=75000的证明）与工程实现（贪心算法、梯度下降）相结合，体现了数学建模的完整流程。
+  takeaways: []
+  source: zhanwen/MathModel 2023研赛优秀论文 C23102890004
+  quality_rating: 4

@@ -610,6 +610,11 @@ class HybridRetriever(BaseRetriever):
                     for cs in card.code_snippets
                 )
             )
+        # 方案 C：学习单元长文（挂在卡片上的 content_md）也进索引——
+        # 它是检索价值最高的富文本。设上限防 embedding 超 token 限制
+        # （单元长文 7-12K 字符，取开头原理部分性价比最高）。
+        if getattr(card, "content_md", ""):
+            parts.append("学习长文: " + card.content_md[:3000])
         # 追加新字段到 page_content（提升向量检索命中率）
         extra = []
         for tag_key, tag_val in (card.tags or {}).items():

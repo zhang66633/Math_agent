@@ -1,10 +1,14 @@
 """学习单元内容库 — 61 个学习单元的元数据注册表与内容加载器（数据层）。
 
-内容正文按「一单元一文件」拆分到 content/<role>/<unit_id>.md：
+内容正文（方案 C 后）：
+- 已迁移的单元（约 30 个与知识库方法卡片同主题的）：正文存在方法卡片的
+  `content_md` 字段里（knowledge_base/methods/**/*.yaml），经 KB loader 读取
+- 未迁移的独有单元（编程手/论文手等）：仍按「一单元一文件」读
+  content/<role>/<unit_id>.md
 - 元数据（角色/难度/类别/前置/主讲智能体）留在本文件的单元定义里
-- Markdown 正文由 _load_content_md 从 content/ 目录读取（带缓存）
 
-历史：从 path_generator.py 拆分（god-files 拆分 #31）→ 再按文件拆分内容（内容文件化）。
+历史：从 path_generator.py 拆分（god-files 拆分 #31）→ 再按文件拆分内容
+（内容文件化）→ 方案 C：与卡片同主题的正文合并回知识库（学/查内容一份）。
 """
 
 from functools import cache
@@ -16,8 +20,31 @@ CONTENT_DIR = Path(__file__).resolve().parent / "content"
 
 
 @cache
+def _card_content_by_unit() -> dict[str, str]:
+    """unit_id → content_md 映射（来自声明了 unit_id 的方法卡片，进程级缓存）。
+
+    方案 C：学习单元正文的单一真源。卡片经 /knowledge CRUD 或迁移脚本更新后
+    需重启生效（与旧版「改 md 文件也要重启」一致）。
+    """
+    try:
+        from ..config import get_settings
+        from ..knowledge.loader import KnowledgeBaseLoader
+
+        loader = KnowledgeBaseLoader(get_settings().kb_root)
+        return {
+            card.unit_id: card.content_md
+            for card in loader.load_all_methods()
+            if card.unit_id and card.content_md
+        }
+    except Exception:
+        return {}
+
+
 def _load_content_md(unit_id: str, role: str) -> str:
-    """按 unit_id 读取 content/<role>/<unit_id>.md；缺文件时返回占位。"""
+    """单元正文：优先取卡片的 content_md（方案 C 统一），否则读 content 文件。"""
+    card_md = _card_content_by_unit().get(unit_id, "")
+    if card_md:
+        return card_md
     target = CONTENT_DIR / role / f"{unit_id}.md"
     if target.exists():
         return target.read_text(encoding="utf-8")

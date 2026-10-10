@@ -38,6 +38,13 @@ class MethodCard(BaseModel):
     difficulty: int = Field(ge=1, le=5, default=3)
     quality_rating: int = Field(ge=1, le=5, default=3)
     tags: dict = Field(default_factory=dict)
+    # ── 方案 C：与学习系统的衔接字段（可选，向后兼容）──
+    # unit_id:    本卡片对应的学习单元 id（如 modeler_lp_01）；学习中心的
+    #             单元正文优先读卡片的 content_md，实现「学/查内容一份」
+    # content_md: 学习单元长文（Markdown）；迁移自 learning/content/<role>/
+    #             <unit_id>.md，挂到卡片后该 md 文件删除
+    unit_id: str = ""
+    content_md: str = ""
 
 
 class PaperAnalysis(BaseModel):

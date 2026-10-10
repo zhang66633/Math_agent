@@ -1,6 +1,6 @@
 <template>
   <div class="mt-10 border-t pt-6">
-    <p class="font-display text-lg font-medium mb-1">🧩 单元自测</p>
+    <p class="font-display text-lg font-medium mb-1 flex items-center gap-2"><Blocks class="h-5 w-5" />单元自测</p>
     <p class="mb-5 text-xs text-muted-foreground">
       学完本单元,来几道选择题检验一下 — 答错会自动进入训练场错题本
     </p>
@@ -27,7 +27,7 @@
       >
         {{ markState === "marking" ? "标记中…" : "学完了？直接标记本单元完成" }}
       </button>
-      <span v-else class="ml-1 text-emerald-600">✅ 已标记完成</span>
+      <span v-else class="ml-1 text-emerald-600 inline-flex items-center gap-1"><CheckCircle2 class="h-3.5 w-3.5" />已标记完成</span>
     </div>
     <div v-else class="space-y-8">
       <div v-for="(q, qi) in questions" :key="q.id">
@@ -35,10 +35,12 @@
           第 {{ qi + 1 }} 题
           <span
             v-if="results[qi]"
-            class="ml-2 font-medium"
+            class="ml-2 font-medium inline-flex items-center gap-1"
             :class="results[qi].correct ? 'text-emerald-500' : 'text-red-500'"
           >
-            {{ results[qi].correct ? "✓ 回答正确" : "✗ 回答错误" }}
+            <Check v-if="results[qi].correct" class="h-3.5 w-3.5" />
+            <X v-else class="h-3.5 w-3.5" />
+            {{ results[qi].correct ? "回答正确" : "回答错误" }}
           </span>
         </p>
         <div class="mb-3 text-sm leading-relaxed" v-html="renderMarkdown(q.question)" />
@@ -51,7 +53,7 @@
           @confirm="(i: number) => onAnswer(qi, i)"
         />
         <div v-if="results[qi]" class="mt-3 rounded-md border border-border bg-card p-3.5 text-sm leading-relaxed">
-          <p class="mb-1.5 text-xs font-medium text-muted-foreground">📖 解析</p>
+          <p class="mb-1.5 text-xs font-medium text-muted-foreground flex items-center gap-1"><BookOpen class="h-3.5 w-3.5" />解析</p>
           <div v-html="renderMarkdown(results[qi].explanation)" />
         </div>
       </div>
@@ -59,13 +61,14 @@
       <!-- 全部答完的总结 -->
       <div v-if="allDone" class="rounded-md border border-primary/30 bg-primary/5 px-4 py-3 text-sm">
         <span class="font-medium">本轮自测: {{ correctCount }}/{{ questions.length }} 正确</span>
-        <span v-if="correctCount === questions.length" class="ml-2 text-muted-foreground">
+        <span v-if="correctCount === questions.length" class="ml-2 text-muted-foreground inline-flex items-center gap-1">
+          <PartyPopper class="h-3.5 w-3.5" />
           {{
             markState === "done"
-              ? "🎉 全对！已自动标记本单元完成 ✅"
+              ? "全对！已自动标记本单元完成"
               : markState === "marking"
-                ? "🎉 全对，正在标记本单元完成…"
-                : "🎉 全对"
+                ? "全对，正在标记本单元完成…"
+                : "全对"
           }}
         </span>
         <span v-else class="ml-2 text-muted-foreground">建议复习错题后再标记完成</span>
@@ -82,7 +85,15 @@ import {
 } from "@/apis/learningApi";
 import { useLearningStore } from "@/stores/learning";
 import { renderMarkdown } from "@/utils/markdown";
-import { Loader2 } from "lucide-vue-next";
+import {
+  Blocks,
+  BookOpen,
+  Check,
+  CheckCircle2,
+  Loader2,
+  PartyPopper,
+  X,
+} from "lucide-vue-next";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 
 const props = defineProps<{

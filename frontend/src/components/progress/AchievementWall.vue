@@ -21,7 +21,7 @@
       <!-- 庆祝弹窗 -->
       <div v-if="celebrating" class="fixed inset-0 z-[61] flex items-center justify-center bg-black/30" @mousedown.self="closeCelebrate">
         <div class="w-full max-w-sm rounded-lg border border-border bg-card p-6 shadow-xl">
-          <p class="mb-1 text-center text-3xl">🎉</p>
+          <PartyPopper class="mx-auto mb-1 h-9 w-9 text-amber-500" />
           <p class="mb-4 text-center font-display text-lg font-medium">恭喜解锁新勋章!</p>
           <div class="mb-5 flex justify-center gap-3">
             <div
@@ -29,7 +29,7 @@
               :key="a.id"
               class="flex w-20 flex-col items-center gap-1 rounded-md border border-border bg-background p-3"
             >
-              <span class="text-2xl">{{ a.icon }}</span>
+              <component :is="achievementIcon(a.icon)" class="h-7 w-7" :class="tierText(a.tier)" />
               <span class="text-xs font-medium">{{ a.name }}</span>
               <span class="text-[10px] text-muted-foreground">{{ tierLabel(a.tier) }}</span>
             </div>
@@ -50,7 +50,7 @@
     <!-- 勋章墙 -->
     <div v-for="tier in tiers" :key="tier.key" class="mb-6">
       <p class="mb-3 flex items-center gap-2 font-display text-base font-medium">
-        <span>{{ tier.icon }}</span>{{ tier.label }}
+        <component :is="tier.icon" class="h-4 w-4" :class="tierText(tier.key)" />{{ tier.label }}
         <span class="font-mono text-[10px] text-muted-foreground">
           {{ unlockedCount(tier.key) }}/{{ tierCount(tier.key) }}
         </span>
@@ -72,12 +72,13 @@
           >NEW</span>
           <div class="mb-1.5 flex justify-center">
             <span
-              class="flex h-12 w-12 items-center justify-center rounded-full border text-2xl"
+              class="flex h-12 w-12 items-center justify-center rounded-full border"
               :class="a.unlocked
                 ? tierRing(a.tier)
-                : 'border-border grayscale opacity-40'"
+                : 'border-border bg-muted/30 opacity-40'"
             >
-              {{ a.unlocked ? a.icon : "🔒" }}
+              <component :is="achievementIcon(a.icon)" v-if="a.unlocked" class="h-6 w-6" :class="tierText(a.tier)" />
+              <Lock v-else class="h-5 w-5 text-muted-foreground" />
             </span>
           </div>
           <p class="text-xs font-medium" :class="a.unlocked ? 'text-foreground' : 'text-muted-foreground'">
@@ -105,12 +106,29 @@
 
 <script setup lang="ts">
 import { useStaggerReveal } from "@/composables/useStaggerReveal";
+import {
+  BadgeCheck,
+  Compass,
+  Flame,
+  Lock,
+  type LucideIcon,
+  Medal,
+  Mountain,
+  PartyPopper,
+  Pencil,
+  Sprout,
+  Star,
+  Swords,
+  Target,
+  Trophy,
+} from "lucide-vue-next";
 import { computed, onMounted, ref } from "vue";
 
 export interface AchievementItem {
   id: string;
   name: string;
   desc: string;
+  /** 后端下发的语义图标 key（sprout/target/pencil/swords/flame/compass/trophy/mountain/star/badge） */
   icon: string;
   tier: "bronze" | "silver" | "gold";
   progress: number;
@@ -125,10 +143,27 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{ ack: [] }>();
 
+/** 成就图标 key → lucide 组件（后端只发语义 key，渲染在前端决定） */
+const ACHIEVEMENT_ICONS: Record<string, LucideIcon> = {
+  sprout: Sprout,
+  target: Target,
+  pencil: Pencil,
+  swords: Swords,
+  flame: Flame,
+  compass: Compass,
+  trophy: Trophy,
+  mountain: Mountain,
+  star: Star,
+  badge: BadgeCheck,
+};
+function achievementIcon(key: string): LucideIcon {
+  return ACHIEVEMENT_ICONS[key] ?? Star;
+}
+
 const tiers = [
-  { key: "bronze", label: "铜章", icon: "🥉" },
-  { key: "silver", label: "银章", icon: "🥈" },
-  { key: "gold", label: "金章", icon: "🥇" },
+  { key: "bronze", label: "铜章", icon: Medal },
+  { key: "silver", label: "银章", icon: Medal },
+  { key: "gold", label: "金章", icon: Trophy },
 ] as const;
 
 const totalCount = computed(() => Math.max(props.achievements.length, 12));
@@ -148,11 +183,14 @@ function unlockedCount(key: string) {
   return props.achievements.filter((a) => a.tier === key && a.unlocked).length;
 }
 function tierLabel(tier: string) {
+  return tier === "bronze" ? "铜章" : tier === "silver" ? "银章" : "金章";
+}
+function tierText(tier: string) {
   return tier === "bronze"
-    ? "🥉 铜章"
+    ? "text-amber-600"
     : tier === "silver"
-      ? "🥈 银章"
-      : "🥇 金章";
+      ? "text-slate-400"
+      : "text-yellow-500";
 }
 function tierRing(tier: string) {
   return tier === "bronze"
@@ -173,7 +211,7 @@ const celebrating = ref(false);
 const confettiOn = ref(false);
 const praiseText = computed(() => {
   const n = newOnes.value.length;
-  if (n >= 2) return `一口气点亮 ${n} 枚勋章,这份坚持值得鼓掌 👏`;
+  if (n >= 2) return `一口气点亮 ${n} 枚勋章,这份坚持值得鼓掌`;
   return "每一枚勋章都是你努力的见证,继续向前!";
 });
 

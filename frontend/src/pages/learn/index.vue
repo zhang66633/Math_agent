@@ -6,7 +6,7 @@ import ChatPanel from "@/components/chat/ChatPanel.vue";
 import { useStreamChat } from "@/composables/useStreamChat";
 import { useChatSessionStore } from "@/stores/chatSession";
 import { type AgentRole, useLearningStore } from "@/stores/learning";
-import { PanelLeft, PanelLeftOpen } from "lucide-vue-next";
+import { Compass, PanelLeft, PanelLeftOpen } from "lucide-vue-next";
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 
@@ -68,9 +68,9 @@ const hubQuickActions = [
             :value="store.currentRole"
             @change="store.switchRole(($event.target as HTMLSelectElement).value as AgentRole)"
           >
-            <option value="modeler">🧩 建模手</option>
-            <option value="programmer">💻 编程手</option>
-            <option value="writer">✍️ 论文手</option>
+            <option value="modeler">建模手</option>
+            <option value="programmer">编程手</option>
+            <option value="writer">论文手</option>
           </select>
         </div>
       </div>
@@ -81,7 +81,7 @@ const hubQuickActions = [
           ref="hubChatPanel"
           storage-key="hub-chat"
           :default-width="380"
-          button-label="💬 助手"
+          button-label="助手"
           :start-collapsed="true"
           class="h-full"
         >
@@ -118,12 +118,12 @@ const hubQuickActions = [
                 v-if="!hubChatOpen"
                 class="flex-1 flex flex-col items-center justify-center gap-3 select-none pointer-events-none"
               >
-                <span class="text-4xl opacity-30">🧭</span>
+                <Compass class="h-12 w-12 opacity-30" stroke-width={1.5} />
                 <p class="font-display text-xl text-muted-foreground/50">学习工位</p>
                 <p class="text-xs leading-relaxed text-muted-foreground/35 text-center">
                   从左侧技能树选择一个知识点开始学习<br />
                   点进资料后,AI 助手会在右侧为你答疑<br />
-                  点右下角「💬 助手」随时召唤
+                  点右下角「助手」随时召唤
                 </p>
               </div>
             </div>

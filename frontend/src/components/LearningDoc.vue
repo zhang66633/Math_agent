@@ -269,7 +269,7 @@ onBeforeUnmount(() => {
   padding: 0.75rem 1rem;
   font-style: normal;
 }
-.prose :deep(blockquote.sec-tip) p:first-child::before { content: "💡 "; }
+.prose :deep(blockquote.sec-tip) p:first-child::before { content: "提示 · "; font-weight: 600; color: hsl(var(--primary)); }
 
 /* 表格: 斑马表头 */
 .prose :deep(table) { font-size: 0.875em; }

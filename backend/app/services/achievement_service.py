@@ -16,13 +16,13 @@ from ..learning.quiz_bank import get_question
 from ..learning.schemas import LearningEvent
 
 ACHIEVEMENT_DEFS = [
-    # ── 🥉 铜 ──────────────────────────────────────────
+    # ── 铜 ──────────────────────────────────────────
     {
         "id": "first_practice",
         "name": "初出茅庐",
         "tier": "bronze",
         "desc": "完成第一次练习",
-        "icon": "🌱",
+        "icon": "sprout",
         "check": "first_practice",
     },
     {
@@ -30,7 +30,7 @@ ACHIEVEMENT_DEFS = [
         "name": "小试牛刀",
         "tier": "bronze",
         "desc": "累计刷满 10 道题",
-        "icon": "🎯",
+        "icon": "target",
         "check": "quiz_count_10",
     },
     {
@@ -38,16 +38,16 @@ ACHIEVEMENT_DEFS = [
         "name": "知错能改",
         "tier": "bronze",
         "desc": "订正 3 道错题(重做答对)",
-        "icon": "✏️",
+        "icon": "pencil",
         "check": "fix_3",
     },
-    # ── 🥈 银 ──────────────────────────────────────────
+    # ── 银 ──────────────────────────────────────────
     {
         "id": "quiz_100",
         "name": "刷题百斩",
         "tier": "silver",
         "desc": "累计刷满 100 道题",
-        "icon": "⚔️",
+        "icon": "swords",
         "check": "quiz_count_100",
     },
     {
@@ -55,7 +55,7 @@ ACHIEVEMENT_DEFS = [
         "name": "坚持不懈",
         "tier": "silver",
         "desc": "连续学习 7 天",
-        "icon": "🔥",
+        "icon": "flame",
         "check": "streak_7",
     },
     {
@@ -63,16 +63,16 @@ ACHIEVEMENT_DEFS = [
         "name": "博采众长",
         "tier": "silver",
         "desc": "在 5 个不同类别中答对过题目",
-        "icon": "🧭",
+        "icon": "compass",
         "check": "categories_5",
     },
-    # ── 🥇 金 ──────────────────────────────────────────
+    # ── 金 ──────────────────────────────────────────
     {
         "id": "quiz_300",
         "name": "题库战神",
         "tier": "gold",
         "desc": "累计刷满 300 道题",
-        "icon": "🏆",
+        "icon": "trophy",
         "check": "quiz_count_300",
     },
     {
@@ -80,7 +80,7 @@ ACHIEVEMENT_DEFS = [
         "name": "习惯养成",
         "tier": "gold",
         "desc": "连续学习 30 天",
-        "icon": "⛰️",
+        "icon": "mountain",
         "check": "streak_30",
     },
     {
@@ -88,7 +88,7 @@ ACHIEVEMENT_DEFS = [
         "name": "全能选手",
         "tier": "gold",
         "desc": "三个角色的题目都刷过",
-        "icon": "🌟",
+        "icon": "star",
         "check": "all_rounder",
     },
     {
@@ -96,7 +96,7 @@ ACHIEVEMENT_DEFS = [
         "name": "十全十美",
         "tier": "gold",
         "desc": "单轮练习连续答对 10 题",
-        "icon": "💯",
+        "icon": "badge",
         "check": "perfect_10",
     },
 ]

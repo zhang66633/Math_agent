@@ -68,7 +68,7 @@ const props = withDefaults(
     defaultWidth: 360,
     min: 280,
     max: 700,
-    buttonLabel: "💬 助手",
+    buttonLabel: "助手",
     startCollapsed: false,
     collapseBelow: undefined,
   },

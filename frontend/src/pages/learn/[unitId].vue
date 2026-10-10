@@ -3,7 +3,7 @@
     <!-- 左侧栏: 可折叠(折叠按钮固定在底部) -->
     <div :class="leftOpen ? 'w-56' : 'w-10'" class="shrink-0 border-r flex flex-col transition-all duration-200">
       <div v-if="leftOpen" class="flex-1 overflow-y-auto min-h-0">
-        <p class="font-mono text-[10px] uppercase tracking-wider text-muted-foreground px-3 py-2.5 border-b">📑 目录</p>
+        <p class="font-mono text-[10px] uppercase tracking-wider text-muted-foreground px-3 py-2.5 border-b flex items-center gap-1.5"><List class="h-3 w-3" />目录</p>
         <div class="py-1">
           <button v-for="h in headings" :key="h.id"
             class="block w-full text-left px-3 py-1 text-xs transition-colors hover:bg-accent/50 truncate"
@@ -31,7 +31,7 @@
         </div>
         <div class="flex items-center gap-2 shrink-0">
           <span class="font-mono text-[10px] text-muted-foreground hidden sm:inline">⏱ {{ unit?.estimated_minutes ?? '--' }}分钟</span>
-          <button class="font-mono text-[10px] text-muted-foreground hover:text-foreground" @click="chatPanel?.toggle()">{{ chatPanel?.open ? '收起助手' : '💬 问AI' }}</button>
+          <button class="font-mono text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1" @click="chatPanel?.toggle()"><MessageCircle class="h-3.5 w-3.5" />{{ chatPanel?.open ? '收起助手' : '问AI' }}</button>
         </div>
       </div>
 
@@ -59,7 +59,7 @@
         ref="chatPanel"
         storage-key="unit-chat"
         :default-width="400"
-        button-label="💬 问AI"
+        button-label="问AI"
         :collapse-below="1024"
         class="flex-1 min-h-0"
       >
@@ -100,7 +100,20 @@ import { useStreamChat } from "@/composables/useStreamChat";
 import { toast } from "@/composables/useToast";
 import { useChatSessionStore } from "@/stores/chatSession";
 import { useLearningStore } from "@/stores/learning";
-import { ArrowLeft, PanelLeft, PanelLeftOpen } from "lucide-vue-next";
+import {
+  ArrowLeft,
+  Blocks,
+  Compass,
+  List,
+  type LucideIcon,
+  MessageCircle,
+  Microscope,
+  PanelLeft,
+  PanelLeftOpen,
+  PenLine,
+  ShieldCheck,
+  Terminal,
+} from "lucide-vue-next";
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 
@@ -133,17 +146,17 @@ function handleAskAI(text: string, section: string) {
 
 const unit = computed(() => store.currentUnit);
 const unitId = computed(() => route.params.unitId as string);
-const agentMap: Record<string, { emoji: string; name: string }> = {
-  analyst: { emoji: "🔍", name: "分析师" },
-  modeler: { emoji: "🧩", name: "建模师" },
-  solver: { emoji: "💻", name: "求解器" },
-  verifier: { emoji: "🔬", name: "检验员" },
-  editor: { emoji: "✍️", name: "编辑" },
+const agentMap: Record<string, { icon: LucideIcon; name: string }> = {
+  analyst: { icon: Microscope, name: "分析师" },
+  modeler: { icon: Blocks, name: "建模师" },
+  solver: { icon: Terminal, name: "求解器" },
+  verifier: { icon: ShieldCheck, name: "检验员" },
+  editor: { icon: PenLine, name: "编辑" },
 };
 const agentInfo = computed(
   () =>
     agentMap[unit.value?.primary_agent ?? ""] ?? {
-      emoji: "🧭",
+      icon: Compass,
       name: "导航员",
     },
 );
@@ -192,7 +205,7 @@ function handleSend(text: string) {
 function onQuizComplete(p: { correct: number; total: number }) {
   toast(
     p.correct === p.total
-      ? `自测全对: ${p.correct}/${p.total} 🎉`
+      ? `自测全对: ${p.correct}/${p.total}`
       : `自测完成: ${p.correct}/${p.total} 正确`,
     p.correct === p.total ? "success" : "info",
   );

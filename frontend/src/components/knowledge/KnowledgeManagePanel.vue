@@ -13,7 +13,7 @@
 
     <div v-if="mgrLoading" class="space-y-3"><div v-for="i in 5" :key="i" class="rounded-md border border-border p-4"><Skeleton class="h-4 w-3/4" /></div></div>
     <div v-else-if="mgrError" class="flex flex-col items-center justify-center gap-2 py-12 border border-dashed border-border rounded-md text-muted-foreground text-sm">
-      <span>⚠️ {{ mgrError }}</span>
+      <span class="flex items-center gap-1.5"><AlertTriangle class="h-4 w-4 text-amber-500" />{{ mgrError }}</span>
       <button class="mt-1 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent transition-colors" @click="loadMgrList">重试</button>
     </div>
     <div v-else-if="mgrEntries.length === 0" class="text-center py-12 border border-dashed border-border rounded-md text-muted-foreground text-sm">暂无条目,切换到「导入知识」添加</div>
@@ -182,7 +182,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { Database, Loader2, Pencil, RefreshCw, Trash2 } from "lucide-vue-next";
+import {
+  AlertTriangle,
+  Database,
+  Loader2,
+  Pencil,
+  RefreshCw,
+  Trash2,
+} from "lucide-vue-next";
 import { computed, onMounted, ref, watch } from "vue";
 
 const props = defineProps<{
@@ -294,7 +301,7 @@ const mgrBadgeClass = computed(
 function mgrSub(e: MgrEntry) {
   if (mgrType.value === "method") return (e.category ?? []).join(", ");
   if (mgrType.value === "paper")
-    return `${e.year ?? ""} ${e.competition ?? ""} ${e.problem_id ?? ""} ★${e.quality_rating ?? 3}${e.problem_ref ? " · 🔗已关联" : " · ⚠未关联"}`;
+    return `${e.year ?? ""} ${e.competition ?? ""} ${e.problem_id ?? ""} · 评分${e.quality_rating ?? 3}${e.problem_ref ? " · 已关联题目" : " · 未关联题目"}`;
   if (mgrType.value === "problem")
     return `${e.year ?? ""} ${e.competition ?? ""} ${e.problem_id ?? ""} · ${e.linked_papers_count ?? 0}篇论文`;
   return `${e.steps_count ?? 0} 个步骤`;

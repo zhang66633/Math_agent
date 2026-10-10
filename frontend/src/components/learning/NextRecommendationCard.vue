@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { type LearningUnit, fetchNextRecommendation } from "@/apis/learningApi";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PartyPopper, Sparkles } from "lucide-vue-next";
 import { ref, watch } from "vue";
 
 const props = withDefaults(
@@ -76,8 +77,8 @@ defineExpose({ refresh });
 
     <!-- 推荐单元 -->
     <div v-else-if="recommendation" class="p-3">
-      <p class="font-mono text-[10px] uppercase tracking-wider text-primary">
-        ✨ AI 建议
+      <p class="font-mono text-[10px] uppercase tracking-wider text-primary flex items-center gap-1">
+        <Sparkles class="h-3 w-3" />AI 建议
       </p>
       <p class="mt-1.5 text-sm font-medium leading-snug">
         {{ recommendation.title }}
@@ -103,8 +104,8 @@ defineExpose({ refresh });
     </div>
 
     <!-- 全部完成 -->
-    <p v-else class="p-3 text-xs text-muted-foreground">
-      🎉 本路径单元已全部完成,去训练场巩固吧
+    <p v-else class="p-3 text-xs text-muted-foreground flex items-center gap-1.5">
+      <PartyPopper class="h-3.5 w-3.5 shrink-0" />本路径单元已全部完成,去训练场巩固吧
     </p>
   </div>
 </template>

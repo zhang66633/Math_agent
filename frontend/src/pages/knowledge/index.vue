@@ -8,15 +8,18 @@
 
       <!-- login / contributor status -->
       <div v-if="!auth.isLoggedIn" class="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-2.5 flex items-center gap-3">
-        <span class="text-sm text-amber-800">⚠ 未登录 — 无法上传或管理知识。请先登录 GitHub 账号。</span>
+        <AlertTriangle class="h-4 w-4 shrink-0 text-amber-600" />
+        <span class="text-sm text-amber-800">未登录 — 无法上传或管理知识。请先登录 GitHub 账号。</span>
         <router-link to="/login" class="ml-auto text-sm text-amber-700 underline shrink-0">去登录</router-link>
       </div>
       <div v-else-if="!auth.isContributor" class="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 flex items-center gap-3">
+        <XCircle class="h-4 w-4 shrink-0 text-red-600" />
         <span class="text-sm text-red-700">当前登录: <strong>{{ auth.user?.login }}</strong> — 不在贡献者列表中。</span>
         <button class="ml-auto text-sm text-red-700 underline shrink-0" @click="auth.logout(); $router.go(0)">退出重登</button>
       </div>
       <div v-else class="mt-4 rounded-md border border-green-200 bg-green-50 px-4 py-2.5 flex items-center gap-3">
-        <span class="text-sm text-green-700">✓ 已认证为贡献者: <strong>{{ auth.user?.login }}</strong></span>
+        <CheckCircle2 class="h-4 w-4 shrink-0 text-green-600" />
+        <span class="text-sm text-green-700">已认证为贡献者: <strong>{{ auth.user?.login }}</strong></span>
       </div>
 
         <!-- Tabs:章节式等宽标签 + 下划线高亮,无胶囊背景 -->
@@ -51,7 +54,14 @@ import KnowledgeImportPanel from "@/components/knowledge/KnowledgeImportPanel.vu
 import KnowledgeManagePanel from "@/components/knowledge/KnowledgeManagePanel.vue";
 import KnowledgeSearchPanel from "@/components/knowledge/KnowledgeSearchPanel.vue";
 import { useAuthStore } from "@/stores/auth";
-import { Layers, Search, Upload } from "lucide-vue-next";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Layers,
+  Search,
+  Upload,
+  XCircle,
+} from "lucide-vue-next";
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 

@@ -1,5 +1,5 @@
 <template>
-  <ChatPanel ref="chatPanel" storage-key="practice-ai" :default-width="320" button-label="💬 刷题助手">
+  <ChatPanel ref="chatPanel" storage-key="practice-ai" :default-width="320" button-label="刷题助手">
     <template #main>
     <!-- 主区 -->
     <div class="flex h-full flex-col min-w-0">
@@ -38,9 +38,9 @@
         <div class="flex items-center gap-2 border-b px-6 py-2.5 shrink-0 flex-wrap">
           <select v-model="store.filterRole" class="rounded-md border border-border bg-background px-2.5 py-1.5 text-xs">
             <option value="">全部角色</option>
-            <option value="modeler">🧩 建模手</option>
-            <option value="programmer">💻 编程手</option>
-            <option value="writer">✍️ 论文手</option>
+            <option value="modeler">建模手</option>
+            <option value="programmer">编程手</option>
+            <option value="writer">论文手</option>
           </select>
           <select v-model="store.filterCategory" class="rounded-md border border-border bg-background px-2.5 py-1.5 text-xs">
             <option value="">全部类别</option>
@@ -74,7 +74,7 @@
             <Skeleton v-for="i in 8" :key="i" class="h-8" :class="i % 3 === 0 ? 'w-11/12' : 'w-full'" />
           </div>
           <div v-else-if="store.bankError" class="flex flex-col items-center justify-center py-20 text-sm text-muted-foreground gap-2">
-            <span class="text-2xl">⚠️</span>
+            <AlertTriangle class="h-8 w-8 text-amber-500" />
             <span>{{ store.bankError }}</span>
             <button
               class="mt-1 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent transition-colors"
@@ -84,7 +84,7 @@
             </button>
           </div>
           <div v-else-if="filteredBank.length === 0" class="flex flex-col items-center justify-center py-20 text-sm text-muted-foreground gap-2">
-            <span class="text-2xl">📭</span>
+            <Inbox class="h-8 w-8" />
             <span>暂无符合条件的题目</span>
             <span class="text-xs">试试调整筛选条件</span>
           </div>
@@ -114,8 +114,8 @@
                   <input type="checkbox" :checked="store.selectedIds.has(q.id)" @change="store.toggleSelect(q.id)" class="accent-primary" />
                 </td>
                 <td class="px-2 py-2 text-center">
-                  <span v-if="q.status === 'mastered'" class="text-emerald-500" title="已掌握">✓</span>
-                  <span v-else-if="q.status === 'wrong'" class="text-red-500" title="做错">✗</span>
+                  <Check v-if="q.status === 'mastered'" class="h-4 w-4 mx-auto text-emerald-500" title="已掌握" />
+                  <X v-else-if="q.status === 'wrong'" class="h-4 w-4 mx-auto text-red-500" title="做错" />
                   <span v-else class="text-muted-foreground/40">—</span>
                 </td>
                 <td class="px-2 py-2 font-mono text-xs text-muted-foreground">{{ q.no }}</td>
@@ -146,7 +146,7 @@
                     :title="q.status === 'wrong' ? '移出错题本' : '加入错题本(标记想重点复习)'"
                     @click="store.toggleMistake(q)"
                   >
-                    {{ q.status === "wrong" ? "✓已加入" : "＋错题本" }}
+                    {{ q.status === "wrong" ? "已加入" : "＋错题本" }}
                   </button>
                 </td>
               </tr>
@@ -177,7 +177,7 @@
           <Skeleton v-for="i in 6" :key="i" class="h-8" :class="i % 3 === 0 ? 'w-11/12' : 'w-full'" />
         </div>
         <div v-else-if="mistakes.length === 0" class="flex flex-col items-center justify-center py-20 gap-2 text-muted-foreground">
-          <span class="text-2xl">🎉</span>
+          <PartyPopper class="h-8 w-8" />
           <span class="text-sm">错题本已清空</span>
           <span class="text-xs">做错的题会出现在这里,重做正确后自动移除</span>
         </div>
@@ -228,13 +228,13 @@
           <div class="mb-4 flex items-center justify-between text-xs text-muted-foreground">
             <span class="font-mono">第 {{ store.sessionIndex + 1 }} / {{ store.session.length }} 题</span>
             <div class="flex items-center gap-4">
-              <span class="font-mono">✓ {{ store.correctCount }} · ✗ {{ store.answers.length - store.correctCount }}</span>
+              <span class="font-mono flex items-center gap-1"><Check class="h-3.5 w-3.5 text-emerald-500" />{{ store.correctCount }} <X class="h-3.5 w-3.5 ml-2 text-red-500" />{{ store.answers.length - store.correctCount }}</span>
               <button
                 class="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent transition-colors"
                 title="半路退出: 本次作答不保存"
                 @click="confirmExit = true"
               >
-                🚪 退出
+                <LogOut class="h-3.5 w-3.5" />退出
               </button>
             </div>
           </div>
@@ -272,13 +272,15 @@
                   ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
                   : 'border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400'"
               >
-                <span>{{ reveal.chosenIndex === reveal.answerIndex ? "✓ 回答正确" : "✗ 回答错误" }}</span>
+                <Check v-if="reveal.chosenIndex === reveal.answerIndex" class="h-4 w-4 shrink-0" />
+                <X v-else class="h-4 w-4 shrink-0" />
+                <span>{{ reveal.chosenIndex === reveal.answerIndex ? "回答正确" : "回答错误" }}</span>
                 <span v-if="reveal.chosenIndex !== reveal.answerIndex" class="font-normal text-muted-foreground">
                   正确答案:{{ letters[reveal.answerIndex] }}
                 </span>
               </div>
               <div class="rounded-md border border-border bg-card p-4">
-                <p class="mb-2 text-xs font-medium text-muted-foreground">📖 解析</p>
+                <p class="mb-2 text-xs font-medium text-muted-foreground flex items-center gap-1"><BookOpen class="h-3.5 w-3.5" />解析</p>
                 <div class="prose prose-sm prose-gray dark:prose-invert max-w-none" v-html="renderMarkdown(lastExplanation)" />
               </div>
               <div class="flex items-center gap-2">
@@ -300,7 +302,7 @@
                   class="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-background px-3 text-xs text-muted-foreground hover:bg-accent transition-colors"
                   @click="askAI"
                 >
-                  🤖 问 AI 为什么
+                  <Bot class="h-3.5 w-3.5" />问 AI 为什么
                 </button>
               </div>
             </div>
@@ -346,8 +348,10 @@
                   />
                 </td>
                 <td class="px-2 py-2">
-                  <span class="text-xs font-medium" :class="a.correct ? 'text-emerald-500' : 'text-red-500'">
-                    {{ a.correct ? "✓ 正确" : `✗ 选了 ${letters[a.chosen]}` }}
+                  <span class="text-xs font-medium flex items-center gap-1" :class="a.correct ? 'text-emerald-500' : 'text-red-500'">
+                    <Check v-if="a.correct" class="h-3.5 w-3.5" />
+                    <X v-else class="h-3.5 w-3.5" />
+                    {{ a.correct ? "正确" : `选了 ${letters[a.chosen]}` }}
                   </span>
                 </td>
                 <td class="px-2 py-2 text-xs text-muted-foreground">{{ a.question.category }}</td>
@@ -374,7 +378,7 @@
       :messages="chatSession.activePracticeMessages"
       :is-running="chatSession.getIsRunning('practice')"
       empty-text="刷题助手"
-      empty-subtext="答错后点「🤖 问 AI 为什么」,把题目带进来问"
+      empty-subtext="答错后点「问 AI 为什么」,把题目带进来问"
       input-placeholder="针对当前题目提问…"
       :session-title="chatSession.activePracticeSession?.title"
       cancellable
@@ -389,7 +393,7 @@
     <Teleport to="body">
       <div v-if="confirmExit" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30" @mousedown.self="confirmExit = false">
         <div class="w-full max-w-sm rounded-lg border border-border bg-card p-5 shadow-xl">
-          <p class="mb-2 font-display text-sm font-medium">🚪 退出本轮练习?</p>
+          <p class="mb-2 font-display text-sm font-medium flex items-center gap-1.5"><LogOut class="h-4 w-4" />退出本轮练习?</p>
           <p class="mb-4 text-xs leading-relaxed text-muted-foreground">
             已答的 {{ store.answers.length }} 道题记录将全部丢弃(错题本、错次、状态不留痕迹),确定退出吗?
           </p>
@@ -417,6 +421,16 @@ import { useStreamChat } from "@/composables/useStreamChat";
 import { useChatSessionStore } from "@/stores/chatSession";
 import { usePracticeStore } from "@/stores/practice";
 import { renderMarkdown } from "@/utils/markdown";
+import {
+  AlertTriangle,
+  BookOpen,
+  Bot,
+  Check,
+  Inbox,
+  LogOut,
+  PartyPopper,
+  X,
+} from "lucide-vue-next";
 import { computed, onMounted, ref } from "vue";
 
 const store = usePracticeStore();

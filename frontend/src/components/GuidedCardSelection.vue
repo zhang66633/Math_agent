@@ -46,16 +46,16 @@
         </span>
         <span
           v-if="modelValue === oi && !reveal"
-          class="absolute right-2.5 top-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground"
-        >✓</span>
+          class="absolute right-2.5 top-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground"
+        ><Check class="h-2.5 w-2.5" stroke-width="3" /></span>
         <span
           v-else-if="reveal && oi === reveal.answerIndex"
-          class="absolute right-2.5 top-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-bold text-white"
-        >✓</span>
+          class="absolute right-2.5 top-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white"
+        ><Check class="h-2.5 w-2.5" stroke-width="3" /></span>
         <span
           v-else-if="reveal && oi === reveal.chosenIndex && oi !== reveal.answerIndex"
-          class="absolute right-2.5 top-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white"
-        >✗</span>
+          class="absolute right-2.5 top-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red-500 text-white"
+        ><X class="h-2.5 w-2.5" stroke-width="3" /></span>
       </button>
     </div>
 

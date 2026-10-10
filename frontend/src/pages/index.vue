@@ -93,11 +93,13 @@
           </div>
           <aside class="lg:col-span-2 lg:border-l lg:border-border lg:pl-10 flex flex-col justify-center">
             <p class="font-mono text-[10px] uppercase tracking-wider text-muted-foreground mb-3">能力范围</p>
-            <pre class="font-mono text-xs leading-relaxed text-muted-foreground/80 whitespace-pre-wrap">🔍 问题分析  →  识别类型与边界
-🧩 模型构建  →  选择最优方法
-💻 求解计算  →  Python 实时执行
-🔬 验证分析  →  灵敏度与鲁棒性
-✍️ 论文写作  →  结构化输出论文</pre>
+            <ul class="space-y-1.5 font-mono text-xs text-muted-foreground/80">
+              <li class="flex items-center gap-2"><Microscope class="h-3.5 w-3.5 shrink-0" />问题分析<span class="text-muted-foreground/40">→</span>识别类型与边界</li>
+              <li class="flex items-center gap-2"><Blocks class="h-3.5 w-3.5 shrink-0" />模型构建<span class="text-muted-foreground/40">→</span>选择最优方法</li>
+              <li class="flex items-center gap-2"><Terminal class="h-3.5 w-3.5 shrink-0" />求解计算<span class="text-muted-foreground/40">→</span>Python 实时执行</li>
+              <li class="flex items-center gap-2"><ShieldCheck class="h-3.5 w-3.5 shrink-0" />验证分析<span class="text-muted-foreground/40">→</span>灵敏度与鲁棒性</li>
+              <li class="flex items-center gap-2"><PenLine class="h-3.5 w-3.5 shrink-0" />论文写作<span class="text-muted-foreground/40">→</span>结构化输出论文</li>
+            </ul>
           </aside>
         </div>
 
@@ -146,7 +148,7 @@
           <!-- 建模手 -->
           <div class="lg:col-span-4 rounded-lg border border-border bg-card p-6 hover:border-primary/20 transition-colors cursor-pointer" @click="router.push('/learn')">
             <div class="flex items-center gap-2 mb-3">
-              <span class="text-lg">🧩</span>
+              <Blocks class="h-5 w-5 text-muted-foreground" />
               <span class="font-display font-medium">建模手</span>
               <span class="font-mono text-[10px] text-muted-foreground ml-auto">方法 + 理论</span>
             </div>
@@ -161,7 +163,7 @@
           <!-- 编程手 -->
           <div class="lg:col-span-4 rounded-lg border border-border bg-card p-6 hover:border-primary/20 transition-colors cursor-pointer" @click="router.push('/learn')">
             <div class="flex items-center gap-2 mb-3">
-              <span class="text-lg">💻</span>
+              <Terminal class="h-5 w-5 text-muted-foreground" />
               <span class="font-display font-medium">编程手</span>
               <span class="font-mono text-[10px] text-muted-foreground ml-auto">代码 + 数据</span>
             </div>
@@ -176,7 +178,7 @@
           <!-- 论文手 -->
           <div class="lg:col-span-4 rounded-lg border border-border bg-card p-6 hover:border-primary/20 transition-colors cursor-pointer" @click="router.push('/learn')">
             <div class="flex items-center gap-2 mb-3">
-              <span class="text-lg">✍️</span>
+              <PenLine class="h-5 w-5 text-muted-foreground" />
               <span class="font-display font-medium">论文手</span>
               <span class="font-mono text-[10px] text-muted-foreground ml-auto">写作 + 排版</span>
             </div>
@@ -251,6 +253,7 @@ import { useTourStore } from "@/stores/tour";
 import request from "@/utils/request";
 import {
   ArrowRight,
+  Blocks,
   BookOpen,
   CheckCircle2,
   Dumbbell,
@@ -259,7 +262,11 @@ import {
   Library,
   Loader2,
   MessageSquare,
+  Microscope,
+  PenLine,
   ShieldAlert,
+  ShieldCheck,
+  Terminal,
   TrendingUp,
   X,
   Zap,

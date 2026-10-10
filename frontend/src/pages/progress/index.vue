@@ -30,7 +30,7 @@
         <div class="mt-6 rounded-md border border-border bg-card p-5">
           <div class="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
             <span class="font-medium">今日学习</span>
-            <span v-if="todayEntry?.count" class="text-emerald-600">已学习 ✓</span>
+            <span v-if="todayEntry?.count" class="text-emerald-600 inline-flex items-center gap-1"><Check class="h-3.5 w-3.5" />已学习</span>
             <span v-else class="text-muted-foreground">
               今天还没有学习记录,
               <RouterLink to="/learn" class="text-primary hover:underline">去学习工位开始吧</RouterLink>
@@ -42,7 +42,7 @@
         <!-- 管家播报 -->
         <div class="mt-6 rounded-md border border-border bg-card p-5" v-bind="stagger.itemProps(0)">
           <div class="flex items-start gap-3">
-            <span class="text-xl">📊</span>
+            <BarChart3 class="h-6 w-6 shrink-0 text-violet-500" />
             <div>
               <p class="text-sm font-medium mb-1">管家 本周播报</p>
               <p class="text-sm text-muted-foreground leading-relaxed">
@@ -64,7 +64,7 @@
 
         <!-- 勋章墙 -->
         <div class="mt-10">
-          <p class="font-display text-lg font-medium mb-4">🏆 勋章墙</p>
+          <p class="font-display text-lg font-medium mb-4 flex items-center gap-2"><Trophy class="h-5 w-5 text-amber-500" />勋章墙</p>
           <AchievementWall
             :achievements="progress.achievements ?? []"
             @ack="profileStore.ackAchievements"
@@ -73,14 +73,14 @@
 
         <!-- 待复习 -->
         <div v-if="reviewItems.length > 0" class="mt-8">
-          <p class="font-display text-base font-medium mb-3">🧠 待复习</p>
+          <p class="font-display text-base font-medium mb-3 flex items-center gap-2"><Brain class="h-4 w-4" />待复习</p>
           <ReviewList :items="reviewItems" @open="(id: string) => router.push(`/learn/${id}`)" />
         </div>
       </template>
 
       <!-- 空状态 -->
       <div v-else class="text-center py-20">
-        <p class="text-2xl mb-3">🌱</p>
+        <Sprout class="h-10 w-10 mx-auto mb-3 text-emerald-500" />
         <p class="text-sm text-muted-foreground">尚未开始学习。去学习工位开启第一条学习路径吧!</p>
       </div>
     </div>
@@ -95,6 +95,7 @@ import StatHero from "@/components/progress/StatHero.vue";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useStaggerReveal } from "@/composables/useStaggerReveal";
 import { useProfileStore } from "@/stores/profile";
+import { BarChart3, Brain, Check, Sprout, Trophy } from "lucide-vue-next";
 import { computed, onMounted, ref } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 

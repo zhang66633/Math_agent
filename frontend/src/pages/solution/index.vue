@@ -437,7 +437,7 @@ async function handleUserSend(text: string, files?: ChatFileRef[]) {
       id: generateId(),
       msg_type: "system",
       type: "error",
-      content: "⚠️ 当前已有任务在执行，请先等待或停止。",
+      content: "当前已有任务在执行，请先等待或停止。",
       created_at: new Date().toISOString(),
     } as Message);
     return;
@@ -461,7 +461,7 @@ async function handleUserSend(text: string, files?: ChatFileRef[]) {
       id: generateId(),
       msg_type: "system",
       type: "error",
-      content: `⚠️ 创建任务失败：${msg ?? "后端不可达，请确认已启动 (uvicorn app.main:app --port 8002)"}`,
+      content: `创建任务失败：${msg ?? "后端不可达，请确认已启动 (uvicorn app.main:app --port 8002)"}`,
       created_at: new Date().toISOString(),
     } as Message);
     chatSession.setRunning(null);

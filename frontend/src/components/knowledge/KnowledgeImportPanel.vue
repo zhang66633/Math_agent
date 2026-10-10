@@ -58,7 +58,7 @@
     </div>
     <div v-if="extractError" class="mt-4 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{{ extractError }}</div>
     <div v-if="savedNotice" class="mt-4 rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-700 dark:text-emerald-400 flex items-center gap-3 flex-wrap">
-      <span>✓ {{ savedNotice }}</span>
+      <span class="flex items-center gap-1.5"><CheckCircle2 class="h-4 w-4 shrink-0" />{{ savedNotice }}</span>
       <button class="ml-auto rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent transition-colors" @click="emit('goto-manage', impType)">去管理知识查看</button>
     </div>
     <div v-if="extractPreview" class="mt-4">
@@ -131,6 +131,7 @@
 import { getExtractionJob, uploadKnowledge } from "@/apis/knowledgeApi";
 import {
   Check,
+  CheckCircle2,
   FileText,
   FileUp,
   Loader2,

@@ -25,7 +25,7 @@
       <span class="h-[11px] w-[11px] rounded-[3px] bg-muted/40" />
       <span class="h-[11px] w-[11px] rounded-[3px] bg-primary/80" />
       <span>多</span>
-      <span class="ml-auto font-mono">点亮每一天 ✨</span>
+      <span class="ml-auto font-mono">点亮每一天</span>
     </div>
   </div>
 </template>

@@ -533,7 +533,7 @@ export const useTaskStore = defineStore("task", () => {
       // 构建给用户看的摘要
       let content = "";
       if (passed !== undefined) {
-        content = passed ? "✅ 验证通过" : "❌ 验证不通过";
+        content = passed ? "验证通过" : "验证不通过";
       } else if (imagesCount > 0) {
         content = `求解完成，输出 ${outputLength} 字，图表 ${imagesCount} 张`;
       } else if (outputLength > 0) {

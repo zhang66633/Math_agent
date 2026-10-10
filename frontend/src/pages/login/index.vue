@@ -65,7 +65,7 @@
 
         <!-- Setup error hint -->
         <div v-if="setupError" class="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-          <p class="font-medium mb-1">⚠️ {{ setupError.includes('无法连接') ? '连接错误' : 'GitHub OAuth 配置错误' }}</p>
+          <p class="font-medium mb-1 flex items-center gap-1.5"><AlertTriangle class="h-4 w-4 shrink-0" />{{ setupError.includes('无法连接') ? '连接错误' : 'GitHub OAuth 配置错误' }}</p>
           <p class="whitespace-pre-wrap">{{ setupError }}</p>
         </div>
 
@@ -132,6 +132,7 @@
 import { useAuthStore } from "@/stores/auth";
 import { APP_NAME } from "@/types/const";
 import {
+  AlertTriangle,
   ArrowLeft,
   Github,
   Loader2,

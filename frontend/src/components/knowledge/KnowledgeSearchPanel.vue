@@ -68,7 +68,7 @@
           <template v-if="detailData.type === 'method_card'">
             <div v-if="detailData.data.unit_id" class="flex items-center gap-2">
               <span class="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">学习单元</span>
-              <span class="text-xs text-primary cursor-pointer hover:underline" @click="goToUnit(detailData.data.unit_id)">📖 {{ detailData.data.unit_id }} →</span>
+              <span class="text-xs text-primary cursor-pointer hover:underline inline-flex items-center gap-1" @click="goToUnit(detailData.data.unit_id)"><BookOpen class="h-3.5 w-3.5" />{{ detailData.data.unit_id }} →</span>
               <span class="text-[10px] text-muted-foreground/60">该卡片的长文即此学习单元正文</span>
             </div>
             <p class="leading-relaxed">{{ detailData.data.principle }}</p>
@@ -77,10 +77,12 @@
           <template v-if="detailData.type === 'paper'">
             <div class="flex items-center gap-3 flex-wrap mb-3">
               <span class="font-mono text-[10px] uppercase tracking-wider border border-border rounded-sm px-2 py-0.5">{{ detailData.data.competition }} {{ detailData.data.year }}·{{ detailData.data.problem_id }}题</span>
-              <span class="text-xs text-amber-500">{{ '★'.repeat(detailData.data.quality_rating || 3) }}</span>
+              <span class="text-xs text-amber-500 flex items-center gap-0.5">
+                <Star v-for="i in (detailData.data.quality_rating || 3)" :key="i" class="h-3 w-3 fill-current" />
+              </span>
               <span class="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{{ detailData.data.difficulty_level }}</span>
-              <span v-if="detailData.data.problem_ref" class="font-mono text-[10px] uppercase tracking-wider text-emerald-600 cursor-pointer hover:underline" @click="openProblemFromPaper(detailData.data.problem_ref)">🔗 {{ detailData.data.problem_ref }}</span>
-              <span v-else class="font-mono text-[10px] uppercase tracking-wider text-muted-foreground/50">⚠ 未关联题目</span>
+              <span v-if="detailData.data.problem_ref" class="font-mono text-[10px] uppercase tracking-wider text-emerald-600 cursor-pointer hover:underline inline-flex items-center gap-1" @click="openProblemFromPaper(detailData.data.problem_ref)"><Link2 class="h-3 w-3" />{{ detailData.data.problem_ref }}</span>
+              <span v-else class="font-mono text-[10px] uppercase tracking-wider text-muted-foreground/50 inline-flex items-center gap-1"><AlertTriangle class="h-3 w-3" />未关联题目</span>
             </div>
             <!-- 问题背景 -->
             <div v-if="detailData.data.problem_context" class="rounded-md border border-border p-4 bg-muted/20">
@@ -124,12 +126,12 @@
             <!-- 可复用模式 -->
             <div v-if="detailData.data.reusable_patterns?.length" class="rounded-md border border-emerald-200 bg-emerald-50/30 p-4">
               <h4 class="font-display font-medium text-sm mb-2 text-emerald-800">可复用的建模模式</h4>
-              <ul class="space-y-1.5"><li v-for="p in detailData.data.reusable_patterns" :key="p" class="text-sm text-emerald-700 flex items-start gap-2"><span class="text-emerald-500 shrink-0">✦</span>{{ p }}</li></ul>
+              <ul class="space-y-1.5"><li v-for="p in detailData.data.reusable_patterns" :key="p" class="text-sm text-emerald-700 flex items-start gap-2"><Sparkles class="h-3.5 w-3.5 shrink-0 mt-0.5 text-emerald-500" />{{ p }}</li></ul>
             </div>
             <!-- 常见陷阱 -->
             <div v-if="detailData.data.common_pitfalls?.length" class="rounded-md border border-amber-200 bg-amber-50/30 p-4">
               <h4 class="font-display font-medium text-sm mb-2 text-amber-800">常见陷阱</h4>
-              <div class="space-y-2"><div v-for="p in detailData.data.common_pitfalls" :key="p.mistake" class="text-sm"><p class="text-amber-700">⚠ {{ p.mistake }}</p><p class="text-muted-foreground text-xs mt-0.5">→ {{ p.solution }}</p></div></div>
+              <div class="space-y-2"><div v-for="p in detailData.data.common_pitfalls" :key="p.mistake" class="text-sm"><p class="text-amber-700 flex items-start gap-1.5"><AlertTriangle class="h-3.5 w-3.5 shrink-0 mt-0.5" />{{ p.mistake }}</p><p class="text-muted-foreground text-xs mt-0.5">→ {{ p.solution }}</p></div></div>
             </div>
             <!-- 评价 -->
             <div class="border-t border-border pt-3 mt-2">
@@ -204,7 +206,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronRight, Loader2, Search } from "lucide-vue-next";
+import {
+  AlertTriangle,
+  BookOpen,
+  ChevronRight,
+  Link2,
+  Loader2,
+  Search,
+  Sparkles,
+  Star,
+} from "lucide-vue-next";
 import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 

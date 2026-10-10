@@ -44,12 +44,12 @@ const letter = computed(() => {
     <Bot class="h-4 w-4" />
   </div>
 
-  <!-- 其他消息类型：方框 + emoji / 字母 -->
+  <!-- 其他消息类型：方框 + lucide 图标 / 字母 -->
   <div v-else class="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm border border-border relative">
     <!-- agent 颜色指示点 -->
     <span v-if="agentColor" class="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full border border-background" :class="agentColor" />
-    <!-- agent emoji 或字母 -->
-    <span v-if="identity" class="text-xs">{{ identity.emoji }}</span>
+    <!-- agent 图标或字母 -->
+    <component :is="identity.icon" v-if="identity" class="h-4 w-4" :class="identity.textColor" />
     <span v-else class="text-xs">{{ letter }}</span>
   </div>
 </template>

@@ -18,15 +18,16 @@
     </button>
     <button
       class="ml-3 text-muted-foreground hover:text-foreground"
+      title="关闭"
       @click="dismissed = true"
     >
-      ✕
+      <X class="h-3.5 w-3.5" />
     </button>
   </div>
 </template>
 
 <script setup lang="ts">
-import { AlertTriangle } from "lucide-vue-next";
+import { AlertTriangle, X } from "lucide-vue-next";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 
 const STORAGE_KEY = "mma-chat-sessions";

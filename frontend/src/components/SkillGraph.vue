@@ -41,7 +41,7 @@
             :class="statusClass(unit.status)"
             @click="$emit('select', unit.id)"
           >
-            <span class="text-xs shrink-0">{{ statusIcon(unit.status) }}</span>
+            <component :is="statusIcon(unit.status)" class="h-3.5 w-3.5 shrink-0" :class="statusIconClass(unit.status)" />
             <span class="truncate flex-1">{{ unit.name }}</span>
             <span v-if="unit.difficulty" class="text-[9px] font-mono px-1 py-0.5 rounded shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
               :class="diffBadge(unit.difficulty)">{{ diffLabel(unit.difficulty) }}</span>
@@ -58,7 +58,13 @@
 
 <script setup lang="ts">
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronRight, Search } from "lucide-vue-next";
+import {
+  CheckCircle2,
+  ChevronRight,
+  Circle,
+  RefreshCw,
+  Search,
+} from "lucide-vue-next";
 import { computed, ref, watch } from "vue";
 
 interface SkillUnit {
@@ -129,7 +135,14 @@ function statusClass(status: string) {
 }
 
 function statusIcon(status: string) {
-  return { completed: "✅", active: "🔄", locked: "⬜" }[status] ?? "⬜";
+  if (status === "completed") return CheckCircle2;
+  if (status === "active") return RefreshCw;
+  return Circle;
+}
+function statusIconClass(status: string) {
+  if (status === "completed") return "text-foreground";
+  if (status === "active") return "text-primary";
+  return "text-muted-foreground/40";
 }
 function diffLabel(d: string) {
   return (

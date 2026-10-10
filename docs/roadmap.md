@@ -1,4 +1,4 @@
-﻿# MathModelAgent — 资源库与开发路线图
+# MathModelAgent — 资源库与开发路线图
 
 > 最后更新: 2026-07-25 (方案模式质量大修 + 路线图同步已完成项)
 > 状态: 活跃开发中
@@ -184,7 +184,7 @@ memory-context-guide.md 提供了 Agent Xi 项目的实战经验，以下模式�
 | **错误处理** | 工具调用有 try-catch，但前端错误提示较粗糙 | 统一错误码 + 前端 toast 通知 |
 | **日志** | 后端有 logging，前端仅 console.error | 前端接入 Sentry 或自建错误上报 |
 | **CI/CD** | 无 | GitHub Actions: lint + typecheck + build + 基础测试 |
-| **Docker** | docker-compose.yml 存在但未验证 | 验证并完善 Docker 部署（含 Redis、ChromaDB） |
+| **Docker** | compose 已合并为单文件（profile 区分 dev 全栈/云端单后端），`docker compose config` 双模式验证通过；未做运行时真机验证（无守护进程） | 有 Docker 环境后 `docker compose --profile dev up` 全栈走一遍 |
 | **安全** | 沙箱有 rlimit+网络阻断，但 Windows 下 rlimit 不生效 | Windows 沙箱替代方案（Docker 容器或 WASM） |
 
 ### 5.4 知识库质量

@@ -1,4 +1,17 @@
-version: "3.8"
+# MathModelAgent 统一编排 —— 本地全栈 / 云端单后端 一双文件
+#
+# 本地开发（全栈：后端 + 前端 + redis + chromadb）:
+#   docker compose --profile dev up -d --build
+#   前端 http://localhost:5174（/api 与 /api/ws 经容器内 nginx 反代到 backend，
+#   见 nginx.conf；前端构建默认同源，无需额外 build args）
+#
+# 云服务器（仅后端；对外经 Cloudflare 隧道，前端走 Pages，见 docs/deploy-cloud.md）:
+#   docker compose up -d --build
+#   生产环境变量写入 backend/.env（参考 backend/.env.production.example）
+#
+# 端口约定: 后端 8002（对齐 backend/Dockerfile EXPOSE 8002，默认仅本机监听）；
+#          前端 5174；redis 6379；chromadb 8001（均为 127.0.0.1 仅本机）。
+# CHROMA_HTTP_URL 不在此文件设置——需要连接远程 chromadb 时在 backend/.env 配置。
 
 services:
   backend:
@@ -6,39 +19,40 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "127.0.0.1:8002:8000"   # 主机 8002 → 容器 8000（对齐 README/.env 端口约定；默认仅本机监听）
+      - "127.0.0.1:8002:8002"
     env_file:
       - ./backend/.env
-    environment:
-      - CHROMA_HTTP_URL=http://chromadb:8000
     volumes:
       - ./backend/knowledge_base:/app/knowledge_base
       - ./backend/data:/app/data
-    depends_on:
-      redis:
-        condition: service_healthy
-      chromadb:
-        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8002/api/health', timeout=5).status==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     restart: unless-stopped
 
+  # ── 以下为本地开发全栈组件（--profile dev）──
+
   frontend:
+    profiles: ["dev"]
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      args:
-        # 构建期注入：容器内静态页直连宿主机后端（同 dev 模式拓扑）
-        - VITE_API_BASE_URL=http://localhost:8002/api
-        - VITE_WS_URL=ws://localhost:8002/api/ws
     ports:
       - "5174:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - backend
     restart: unless-stopped
 
   redis:
+    profiles: ["dev"]
     image: redis:7-alpine
     ports:
-      - "127.0.0.1:6379:6379"   # 仅本机（开发模式后端直连 redis；后端无 redis 时自动回退 fakeredis）
+      - "127.0.0.1:6379:6379"   # 仅本机；后端无 redis 时自动回退 fakeredis
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -47,9 +61,10 @@ services:
     restart: unless-stopped
 
   chromadb:
+    profiles: ["dev"]
     image: chromadb/chroma:latest
     ports:
-      - "127.0.0.1:8001:8000"   # 仅本机（开发模式后端直连向量库）
+      - "127.0.0.1:8001:8000"   # 仅本机；连接时在 backend/.env 设 CHROMA_HTTP_URL=http://localhost:8001
     volumes:
       - ./backend/data/chroma_db:/chroma/chroma
     environment:

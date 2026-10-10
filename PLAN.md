@@ -383,7 +383,7 @@ analysis_agent modeling_agent data_preprocessing solving_agent verification_ age
 7. ✅ Docker Compose 文件 (backend + frontend + redis)
 8. ✅ 启动脚本 `start.py`（install/start/stop 三合一）+ `start.bat` 转发
 
-**可交付**: `docker-compose up` 全栈启动；`GET /api/health` 返回 200
+**可交付**: `docker compose --profile dev up` 全栈启动（云端单后端 `docker compose up`）；`GET /api/health` 返回 200
 
 ### Phase 1 — 前端壳 + 后端编排核心 (已完成 ✅)
 
@@ -905,7 +905,7 @@ paper:
 
 ## Verification
 
-1. **Phase 0**: `docker-compose up` 全栈启动；`/api/health` 200；`/api/tasks` CRUD 正常；知识库统计 API 返回正确数量
+1. **Phase 0**: `docker compose --profile dev up` 全栈启动；`/api/health` 200；`/api/tasks` CRUD 正常；知识库统计 API 返回正确数量
 2. **Phase 1**: 前端输入问题 → WS 推送进度 → Chat/Teach 页面展示分析结果；SSE 流式输出正常
 3. **Phase 2**: LP 问题 → Notebook 区域展示模型 LaTeX + 代码 + 执行结果
 4. **Phase 3**: 人为缺陷模型 → 验证捕获 → 回退提示 → 修正 → 论文输出

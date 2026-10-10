@@ -169,6 +169,22 @@ flowchart TD
   见 [plan-c-content-merge.md](./plan-c-content-merge.md)。
 - 遗留：docker-compose 两份合并需 Docker 环境验证（本机无 Docker），不做盲改。
 
+### compose 合并 + 资源导入 + 卡片合并（2026-10）
+
+- `dcf6601` 资源导入：zhanwen/MathModel 两篇 2023 研赛优秀论文走项目自己的
+  LLM 提取流水线入库（papers 17→20）；顺带修掉三个真实配置问题（虚构模型名
+  deepseek-v4-* 导致 404 → deepseek-chat；embedding key base_url 缺 /v1；
+  同题论文输出文件名互相覆盖）；新增 gitignore 规则（KB 附件/raw.txt 不入库）。
+- `22f8f7a` 卡片合并：mc_094→mc_016（BP）、mc_057+mc_042→mc_090（存贮论），
+  保守并集合并不丢内容，methods 89→86。
+- compose 合并（本提交）：`docker-compose.cloud.yml` 并入 `docker-compose.yml
+  （backend 无 profile 默认启动=云端单后端；frontend/redis/chromadb 挂
+  `dev` profile=本地全栈）；修掉 dev 编排的后端端口谎言（8002:8000 →
+  8002:8002，对齐 Dockerfile EXPOSE）；孤儿 nginx.conf 修好（upstream 8002、
+  WS 升级并入 /api/）并正式挂载进 frontend 容器；CHROMA_HTTP_URL 移入
+  backend/.env；两份 `docker compose config`（默认/--profile dev）均验证通过。
+  运行时真机验证待有 Docker 守护进程的环境补做。
+
 ### 方案 C 实施（2026-09，用户拍板方向 3）
 
 - `d534743` 数据修复：8 张不同方法的卡片 id 全部撞成 mc_048（批量导入缺陷），

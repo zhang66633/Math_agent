@@ -158,8 +158,8 @@ pnpm dev                       # http://localhost:5174（/api 代理到 127.0.0.
 NB_project/
 ├── start.py                      # 统一入口：install / start / stop 三个子命令
 ├── start.bat                     # Windows 转发器（纯 ASCII，逻辑都在 start.py）
-├── docker-compose.yml           # 全栈容器化编排（可选）
-├── nginx.conf                   # 生产反向代理配置模板（compose 未挂载，按需使用）
+├── docker-compose.yml           # 统一编排：--profile dev 全栈 / 默认仅后端（云端）
+├── nginx.conf                   # 前端容器反向代理（/api 含 WS 升级；compose 已挂载）
 ├── PLAN.md / RULES.md           # 现行开发权威文档
 │
 ├── backend/                     # FastAPI + LangGraph 后端

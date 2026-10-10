@@ -1,0 +1,166 @@
+paper:
+  id: paper_029
+  year: 2019
+  competition: 研赛
+  problem_id: B
+  title: 无线智能传播模型
+  tags:
+    problem_type:
+    - 预测
+    - 回归
+    - 特征工程
+    core_models:
+    - LightGBM
+    - DNN
+    - CNN
+    - ResNet
+    - GoogleNet
+    - NetworkInNetwork
+    techniques:
+    - Cost231-Hata模型
+    - PCA异常检测
+    - Pearson相关性分析
+    - 方差分析
+    - 特征重要性分析
+    - KL散度
+    - 孔洞卷积
+    - 批标准化
+    - Adam优化器
+  problem_ref: ''
+  problem_context: 随着5G通信技术的快速发展，无线网络规划成为基站部署的核心问题。5G信号使用超高频电磁波传输，在传播过程中容易受到透射、绕射、散射、反射、折射等多种因素的影响，导致信号大量损耗。无线传播模型通过对目标通信覆盖区域内的无线电波传播特性进行预测，使得小区覆盖范围、小区间网络干扰以及通信速率等指标的估算成为可能，从而辅助基站选址和网络规划。本题提供了约4000个小区的工程数据和地图数据，包括基站栅格位置（CellX,
+    CellY）、用户栅格位置（X, Y）、基站发射机相对地面高度（Height）、水平方向角（Azimuth）、垂直电下倾角（Electrical Downtilt）、垂直机械下倾角（Mechanical
+    Downtilt）、中心频率（Frequency Band）、发射功率（RS Power）、基站位置海拔高度（Cell Altitude）、用户位置海拔高度（Altitude）、建筑物高度（Building
+    Height, Cell Building Height）、地物类型索引（Clutter Index, Cell Clutter Index）等字段。目标变量为每个栅格位置的平均信号接收功率RSRP（dBm）。题目要求：(1)基于Cost231-Hata模型分析并设计合适的特征；(2)计算各特征与RSRP的相关性并排序，说明原因和计算方法；(3)建立多种预测模型对RSRP进行回归预测，比较模型性能，评价RMSE和弱覆盖识别率PCRR等指标。
+  methodology_chain:
+  - '数据理解与特征设计: 基于Cost231-Hata传播模型原理，从工程参数和地图数据中提取基站与用户的相对距离、高度差、地物类型等备选特征'
+  - '特征构造: 计算基站栅格与用户栅格的欧氏距离Distance，构造基站实际高度CA+H和基站与用户高度差Height Difference（含下倾角修正），重新排列地物类型索引'
+  - '异常值检测: 使用PCA主成分分析对标准化后的数据进行异常检测，取解释90%方差的成分计算异常阈值0.017，最终决定不去除异常值'
+  - '特征选择(LightGBM): 使用LightGBM的feature_importance()量化各特征对RSRP的重要性，发现Distance和Height
+    Difference最为重要，Frequency Band几乎可忽略'
+  - '特征选择(相关性分析): 计算Pearson相关系数，Distance相关系数-0.187最大，Height Difference为0.165次之，其余均在0.03以下'
+  - '特征选择(方差分析): 计算各特征方差，Distance方差1186355.84最大，Height Difference方差34838.45次之，三种方法结论一致'
+  - '模型建立(DNN): 构建2-4层全连接神经网络，每层后接ReLU激活，MSE为损失函数，数据归一化为均值0方差1，RMSE=10.0'
+  - '模型建立(CNN): 设计三种CNN结构——naive-NIN（基于NetworkInNetwork）、progressive-residual-network（基于ResNet残差块）、multi-view-wider-network（基于GoogleNet的Inception结构含孔洞卷积）'
+  - '模型建立(LightGBM): 使用LightGBM进行回归，叶子节点数15000，学习率0.15，行采样0.8，不进行列采样'
+  - '模型评估与对比: 使用RMSE和PCRR两个指标评估，LightGBM取得RMSE=6.697、PCRR=0.531最优，ResNet CNN取得RMSE=7.805、PCRR=0.398，并计算预测分布与真实分布的KL散度仅0.0027'
+  key_formulas:
+  - name: 高度差计算公式
+    latex: \Delta h = (CA + H) - (BH + A) - d \cdot \tan(ED + MD)
+    description: 计算基站与用户之间的有效高度差，其中CA为基站海拔，H为基站相对地面高度，BH为用户建筑物高度，A为用户海拔，d为水平距离，ED为电下倾角，MD为机械下倾角。该特征综合考虑了地形、建筑物和天线倾角对信号传播的影响。
+  - name: Pearson相关系数
+    latex: r = \frac{\sum_{i=1}^{n}(X_i - \bar{X})(Y_i - \bar{Y})}{(n-1) S_X S_Y}
+    description: 衡量特征与RSRP之间的线性相关程度，其中$\bar{X}$、$\bar{Y}$为变量均值，$S_X$、$S_Y$为标准差，n-1为自由度。
+  - name: RMSE均方根误差
+    latex: RMSE = \sqrt{\frac{1}{N}\sum_{i=1}^{N}(\hat{y}_i - y_i)^2}
+    description: 评估预测值与实测值整体偏差的指标，$\hat{y}_i$为模型预测RSRP值，$y_i$为实际测量RSRP值。
+  - name: PCRR弱覆盖识别率
+    latex: PCRR = \frac{2 \cdot Precision \cdot Recall}{Precision + Recall}
+    description: 综合考虑准确率Precision和召回率Recall的F1指标，用于评估弱覆盖区域的识别能力。Precision为预测弱覆盖中实际弱覆盖的比例，Recall为实际弱覆盖中被预测出的比例。
+  - name: 残差学习
+    latex: x \rightarrow (H(x) - x) + x = F(x) + x
+    description: ResNet残差块的核心思想，通过跳跃连接使梯度可以直接回传，避免梯度消失问题。
+  - name: KL散度
+    latex: D_{KL}(y \| y_{pred}) = \sum y \log\frac{y}{y_{pred}}
+    description: 衡量用预测分布$y_{pred}$近似真实分布$y$时损失的信息量，论文中该值仅为0.0027，说明预测分布与真实分布非常接近。
+  algorithm_outline:
+  - language: python
+    description: 特征提取与构造：从原始工程参数计算距离、高度差等衍生特征
+    code: "def combine_features(train):\n    # 计算基站与用户的欧氏距离\n    xx = train['CellX']\
+      \ - train['X']\n    yy = train['CellY'] - train['Y']\n    dist = np.sqrt(xx*xx\
+      \ + yy*yy)\n    \n    # 计算高度差（含下倾角修正）\n    diff = (train['CellBuildingHeight']\
+      \ + train['CellAltitude'] + train['Height']) \\\n           - (train['BuildingHeight']\
+      \ + train['Altitude'])\n    arcs = (train['ElectricalDowntilt'] + train['MechanicalDowntilt'])\
+      \ / 180 * math.pi\n    for i, arc in enumerate(arcs):\n        diff[i] -= dist[i]\
+      \ * math.tan(arc)\n    \n    # 基站实际高度\n    real_height = train['CellBuildingHeight']\
+      \ + train['CellAltitude'] + train['Height']\n    \n    # 重新映射地物类型索引（去除出现次数为0的类别）\n\
+      \    clutter_index_dict = {2:1, 5:2, 6:3, 7:4, 8:5, 10:6, 11:7, 12:8, 13:9,\
+      \ 14:10, 15:11, 16:12, 17:13, 18:14}\n    new_clutter_index = train['ClutterIndex'].map(clutter_index_dict)\n\
+      \    new_cell_clutter_index = train['CellClutterIndex'].map(clutter_index_dict)\n\
+      \    \n    return train1"
+  - language: python
+    description: PCA异常值检测
+    code: "from sklearn.decomposition import PCA\n\n# 标准化\n train_mean = np.mean(train_data,\
+      \ axis=0)\ntrain_var = np.std(train_data, axis=0)\ntrain_data = (train_data\
+      \ - train_mean) / train_var\n\n# PCA\npca = PCA()\npca.fit(train_data)\ntransformed_data\
+      \ = pca.transform(train_data)\nlambdas = pca.singular_values_\nM = (transformed_data**2)\
+      \ / (lambdas + 1e-8)\nmajor_components = np.sum(M, axis=1)\nthre = np.quantile(major_components,\
+      \ 0.99)\noutliers_idx = np.where(major_components > thre)[0]"
+  - language: python
+    description: LightGBM模型训练与特征选择
+    code: "import lightgbm as lgb\n\nlgb_train = lgb.Dataset(X_train, label=y_train)\n\
+      lgb_val = lgb.Dataset(X_val, label=y_val)\n\nparam = {\n    'num_leaves': 15000,\n\
+      \    'learning_rate': 0.15,\n    'num_threads': 4,\n    'objective': 'regression_l2',\n\
+      \    'bagging_fraction': 0.75,\n    'bagging_freq': 1,\n    'metric': 'l2_root'\n\
+      }\n\ngbm = lgb.train(param, lgb_train, num_boost_round=1000,\n             \
+      \   valid_sets=lgb_val, early_stopping_rounds=50)\n\n# 特征重要性\nfeature_imp =\
+      \ sorted(zip(gbm.feature_importance(), feature_names), reverse=True)"
+  - language: python
+    description: CNN模型（ResNet风格）关键结构
+    code: "def conv_res_model(X):\n    X = tf.reshape(X, [-1, 10, 1, 1])\n    \n \
+      \   # Layer1: 5x1卷积\n    conv1 = tf.nn.conv2d(X, Wconv1, strides=[1,1,1,1],\
+      \ padding='SAME') + bconv1\n    relu1 = tf.nn.relu(conv1)\n    \n    # Layer2:\
+      \ 1x1卷积升维\n    conv2 = tf.nn.conv2d(relu1, Wconv2, strides=[1,1,1,1], padding='SAME')\
+      \ + bconv2\n    relu2 = tf.nn.relu(conv2)\n    \n    # Layer3: 3x1卷积 + 残差连接\n\
+      \    conv3 = tf.nn.conv2d(relu2, Wconv3, strides=[1,1,1,1], padding='SAME')\
+      \ + bconv3\n    conv3 += relu1  # 跳跃连接\n    relu3 = tf.nn.relu(conv3)\n    \n\
+      \    # 后续残差块...\n    # 最终全连接层\n    relu_final = tf.reshape(relu7, [-1, 10*256])\n\
+      \    y_out = tf.matmul(relu_final, W1) + b1\n    return y_out"
+  assumption_analysis:
+  - '假设1: RSRP是题目所给工程参数和地图数据中所有变量的函数，且不受其他变量影响，数据真实可靠 → 这是监督学习的基本前提，合理但过于理想化。实际中天气、临时障碍物等也会影响信号，论文在4.2.1节也讨论了天气因素但因数据缺失而忽略。放松此假设可引入更多环境特征。'
+  - '假设2: 相邻小区在RSRP测量时不会产生相互干扰，同一位置对两个小区测量时RSRP值不会叠加 → 简化了小区间干扰问题，在密集城区可能不成立。放松后需考虑小区间干扰协调(ICIC)机制。'
+  - '假设3: 地图栅格化处理合理，每个栅格5米范围内地理特征几乎不变，可用栅格左上角代表实际位置 → 5米分辨率对大多数场景合理，但在密集城区建筑边缘可能存在较大误差。放松后需考虑栅格内插值或更细粒度建模。'
+  reusable_patterns:
+  - '多维度特征选择验证模式: 同时使用LightGBM特征重要性、Pearson相关系数和方差分析三种方法对特征进行排序，三种方法结论一致时可信度高。这种交叉验证思路可迁移到任何回归/分类问题的特征工程中。'
+  - '物理模型引导的特征构造: 基于Cost231-Hata等经典传播模型的物理机理来设计特征（如距离、高度差、下倾角修正），而非盲目构造多项式特征。这种''领域知识+数据驱动''的特征工程方法可迁移到任何有物理背景的建模问题。'
+  - '经典CNN结构迁移到非图像数据: 将ResNet、GoogleNet等经典CNN结构迁移到一维特征数据的回归问题中，通过将特征维度视为空间维度（h=特征数,
+    w=1），利用卷积提取局部相关性。这种思路可迁移到任何结构化数据的深度学习建模。'
+  - '分布匹配评估: 除了RMSE等点预测指标外，还通过KL散度、均值、标准差、峰度等高阶统计量比较预测分布与真实分布，全面评估模型性能。这种评估思路适用于任何需要关注预测分布形态的场景。'
+  - 'PCA异常检测的审慎决策: 通过PCA检测到异常值后，不是盲目删除，而是可视化分析异常值距离主成分的远近，判断是否值得处理。这种''检测-分析-决策''的流程避免了过度清洗数据。'
+  common_pitfalls:
+  - mistake: 直接使用原始坐标(X, Y, CellX, CellY)作为特征输入模型
+    solution: 绝对坐标没有物理意义且数值范围远大于其他特征，应转换为相对距离Distance = sqrt((CellX-X)^2 + (CellY-Y)^2)，以基站为原点建立相对坐标系
+  - mistake: 忽略下倾角对高度差的修正作用
+    solution: 天线垂直下倾角(电下倾+机械下倾)会改变信号传播方向，应在高度差计算中减去d*tan(ED+MD)的修正项，使特征更符合物理实际
+  - mistake: 在CNN中直接使用原始特征而不做归一化
+    solution: 神经网络对输入尺度敏感，必须做去均值(减均值)和归一化(除标准差)处理，否则训练难以收敛
+  - mistake: 仅依赖单一方法进行特征选择
+    solution: 应交叉使用LightGBM特征重要性、Pearson相关系数、方差分析等多种方法，当多种方法结论一致时才可确信特征的重要性排序
+  - mistake: 在CNN中设计过深的网络或过多的通道数
+    solution: 论文实验表明，通道数翻倍后RMSE仅从7.805降至7.799，收益极小。应根据数据规模(仅10-12个特征)设计适度的网络复杂度，感受野刚好覆盖特征维度即可
+  - mistake: 忽略地物类型索引中不存在的类别
+    solution: 应先统计各地物类型出现频率，删除出现次数为0的类别，并重新连续编号，避免模型学习到无意义的类别标签
+  difficulty: 3
+  difficulty_level: hard
+  analysis:
+    problem_summary: 基于5G基站工程参数和地图数据，构建无线信号传播预测模型，预测各栅格位置的平均信号接收功率RSRP，并识别弱覆盖区域。
+    key_assumptions:
+    - RSRP仅由所给工程参数和地图数据决定
+    - 相邻小区RSRP测量无相互干扰
+    - 5米栅格内地理特征不变，可用栅格左上角代表实际位置
+    decision_variables: 无传统意义上的决策变量，核心是特征向量X = (Distance, Height Difference, Azimuth,
+      Electrical Downtilt, RS Power, CellHeight, NewClutterIndex, NewCellClutterIndex,
+      ...)到RSRP的映射函数f(X)
+    objective: 最小化预测RSRP与真实RSRP之间的RMSE，同时最大化弱覆盖识别率PCRR
+    constraints: 模型需可部署到云端推理环境（推理速度、模型大小限制），训练数据约1000万条样本，特征维度约10-12维
+  model:
+    approach: 论文采用'特征工程+多模型对比'的整体思路。首先基于Cost231-Hata传播模型设计物理意义明确的特征，包括相对距离、高度差（含下倾角修正）、地物类型等。然后通过LightGBM特征重要性、Pearson相关性分析和方差分析三种方法交叉验证特征重要性，确定最终特征集。在建模阶段，分别构建了DNN（全连接网络）、三种CNN结构（基于NIN、ResNet、GoogleNet）和LightGBM模型进行RSRP回归预测。CNN模型将特征维度视为空间维度，利用卷积操作提取局部相关性，通过残差连接和Inception结构加深加宽网络。LightGBM则利用梯度提升树处理结构化数据。最终从RMSE、PCRR和预测分布匹配度三个维度综合评估模型性能。
+    innovation: 将经典CNN结构（ResNet、GoogleNet）创新性地迁移到无线传播预测这一非图像领域，通过将特征维度视为空间维度进行卷积操作；同时使用KL散度等高阶统计量全面评估预测分布与真实分布的一致性，而不仅仅依赖RMSE。
+    solution_method: Python 3.6 + TensorFlow 1.8 + CUDA 10.1 + LightGBM，使用1个1080Ti
+      GPU训练。CNN使用Adam优化器，学习率0.0001每10轮衰减至10%，权值衰减0.0005，批大小2048，批标准化。LightGBM叶子数15000，学习率0.15，行采样0.8。
+  evaluation:
+    strengths:
+    - 特征工程扎实，基于物理模型设计特征而非盲目构造，特征选择使用三种方法交叉验证
+    - 模型对比全面，涵盖传统机器学习(LightGBM)和深度学习(DNN/CNN)多种方法
+    - CNN结构设计有创新，将ResNet和GoogleNet迁移到非图像领域，感受野设计有理论依据
+    - 评估指标全面，除RMSE和PCRR外还使用KL散度比较高阶分布匹配
+    - 对异常值处理审慎，通过可视化分析后决定不处理，避免过度清洗
+    weaknesses:
+    - 特征与RSRP的相关系数普遍偏低（最大仅0.187），说明特征工程仍有较大提升空间
+    - 未考虑天气因素（论文中承认但未处理），可能遗漏重要影响因素
+    - CNN模型未部署批标准化层到云端，导致线上结果低于本地结果
+    - LightGBM模型大小达462M，难以部署到生产环境
+    - 缺少对特征交互项的显式建模，如距离与地物类型的交互作用
+    lessons: 这篇论文展示了如何将领域知识（无线传播物理模型）与数据驱动方法（机器学习/深度学习）有机结合。最重要的启示是：特征工程的质量决定了模型性能的上限，而基于物理机理的特征设计比盲目构造特征更有效。此外，在模型选择上，不应盲目追求深度学习，LightGBM在结构化数据上往往能提供更强的baseline。最后，模型评估应多维度进行，分布匹配度(KL散度)有时比点预测精度(RMSE)更能反映模型的实际可用性。
+  takeaways: []
+  source: “华为杯”第十六届中国研究生数学建模竞赛
+  quality_rating: 4

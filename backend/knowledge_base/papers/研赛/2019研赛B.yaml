@@ -1,0 +1,248 @@
+paper:
+  id: paper_030
+  year: 2019
+  competition: 研赛
+  problem_id: B
+  title: 无线智能传播模型
+  tags:
+    problem_type:
+    - 预测
+    - 特征工程
+    core_models:
+    - Cost 231-Hata模型
+    - Standard Propagation Model (SPM)
+    - Okumura-Hata模型
+    - 深度神经网络（五层全连接）
+    - 随机森林
+    techniques:
+    - 数据可视化
+    - 异常值检测与剔除
+    - 几何特征构造
+    - 多项式/对数/三角变换
+    - Pearson相关性分析
+    - Spearman相关性分析
+    - 方差筛选
+    - BatchNormalization
+    - LeakyReLU
+    - Adam优化器
+  problem_ref: ''
+  problem_context: 随着5G NR技术的发展，运营商在部署5G网络时需要合理选择基站站址以满足用户通信需求。无线传播模型通过对目标覆盖区域内无线电波传播特性进行预测，使小区覆盖范围、小区间干扰及通信速率等指标的估算成为可能。由于无线电波传播环境复杂，受平原、山体、建筑物、湖泊、海洋、森林、大气、地球曲率等因素影响，电磁波产生透射、绕射、散射、反射、折射等复杂现象，建立准确模型是一项艰巨任务。传统无线传播模型分为经验模型（如Cost
+    231-Hata、Okumura）、理论模型（如Volcano）和改进型经验模型（如SPM）。传统建模需收集大量实测数据、工程参数和电子地图进行校正，本质是函数拟合过程。本题提供4000个小区共120,118,33条数据，包括工程参数数据（小区编号、站点栅格位置、发射机高度、水平方向角、垂直机械下倾角、中心频率、发射功率等9个字段）、地图数据（建筑物高度、海拔高度、地物类型索引等8个字段，栅格化处理，每栅格5m×5m）和RSRP标签数据。问题一要求基于Cost
+    231-Hata模型和数据集信息设计特征并阐述原因；问题二要求设计多个特征，计算与目标的相关性并量化排序；问题三要求建立基于AI的无线传播模型预测RSRP，弱覆盖识别率不小于20%，预测均方根误差尽可能小。
+  methodology_chain:
+  - '数据观察与可视化: 对原始特征绘制直方图、计算基本统计量（均值、标准差、四分位数等），结合地图可视化分析数据分布特征'
+  - '数据清洗: 检查缺失值（无缺失）、一致性（同一文件内工程参数统一）、重复性（无重复目标栅格点），发现海拔异常点（低于470的值仅5条数据共2个点）并剔除'
+  - '数据集划分: 按8:2比例划分训练集和验证集，比对两数据集特征分布确认划分有效性'
+  - '问题一特征设计: 基于Cost 231-Hata经验模型提取非线性组合特征（log(f)、log(ht)、log(d)、log(ht)log(d)、log(hr)等），基于几何位置信息构造7个空间几何特征（距离、高度差、夹角等），结合工程信息和地物类型信息共设计17项特征'
+  - '问题二特征设计: 扩展传统信道模型（引入SPM模型和衍射损失特征），推广几何特征至一般情形，通过多项式变换、对数变换、三角函数变换生成额外非线性特征，共构造36个候选特征'
+  - '问题二特征选择: 计算方差、Pearson相关系数、Spearman相关系数，结合随机森林特征重要性评估，对四项排名取均值获得综合排序'
+  - '问题三模型建立: 构建五层全连接神经网络，使用LeakyReLU激活函数和BatchNormalization层，以均方误差为损失函数'
+  - '问题三模型求解: 使用Adam优化器进行梯度更新，在训练集上训练并在验证集上评估，最终获得9.06的验证集误差'
+  - '模型评价与可视化: 将预测RSRP值与真实值进行地图可视化对比，去除极端值后确认分布基本相似，模型上传华为云测试获得前3%成绩'
+  key_formulas:
+  - name: Okumura-Hata模型路径损耗
+    latex: PL_{urban}(dB) = 69.55 + 26.16 \times \log(f) - 13.82 \times \log(h_t)
+      - a(h_r) + [44.9 - 6.55\log(h_t)] \times \log(d)
+    description: Okumura-Hata经验模型，适用于150-1500MHz频段，计算城市环境下的路径损耗
+  - name: 接收者相关系数
+    latex: a(h_r) = \begin{cases} 8.29[\log(1.54h_r)]^2 - 1.1 & f_c \leq 300MHz \\
+      3.2[\log(11.75h_r)]^2 - 4.97 & f_c \geq 300MHz \end{cases}
+    description: 接收天线高度修正因子，根据频率不同采用不同计算方式
+  - name: Cost 231-Hata模型路径损耗
+    latex: PL(dB) = 46.3 + 33.9 \times \log(f_c) - 13.82 \times \log(h_t) - a(h_r)
+      + [44.9 - 6.55\log(h_t)] \times \log(d) + C_m
+    description: Cost 231-Hata模型，适用于1500-2000MHz频段，是本文特征设计的主要依据
+  - name: 场景修正常数
+    latex: C_m = \begin{cases} 0dB & \text{中型城市和郊区} \\ 3dB & \text{大城市} \end{cases}
+    description: 不同场景下的路径损耗修正值
+  - name: 天线有效高度
+    latex: h_t = Height + Cell\ Altitude - Altitude
+    description: 发射天线相对于接收点的有效高度
+  - name: SPM模型接收信号强度
+    latex: P_r = P_t - \{K_1 + K_2\log(d) + K_3\log(h_t) + K_4 DiffractionLoss + K_5\log(d)\log(h_t)
+      + K_6 h_r + K_7\log(h_r) + K_{clutter}f_{clutter} + K_{hill}\}
+    description: Standard Propagation Model，改进型经验模型，引入更多参数适应更细分类场景
+  - name: 单刃衍射损失
+    latex: J(v) = 6.9 + 20\log(\sqrt{(v-0.1)^2+1}+v-0.1)
+    description: 估算信号传播中的衍射损失，当v≤-0.78时J(v)设为0
+  - name: 地形附加损失（空旷区域）
+    latex: A_h = -(21.8 + 6.2\log(f))\log(\frac{h}{R})
+    description: 海洋等空旷区域的地形附加损失计算
+  - name: 几何特征-目标栅格与天线距离
+    latex: d_a = \sqrt{\Delta X^2 + \Delta Y^2 + \Delta Z^2}
+    description: 目标栅格到天线的三维空间距离
+  - name: 几何特征-目标栅格与信号线距离
+    latex: d_s = \sqrt{(\Delta Z - \tan(\theta_{MD}+\theta_{ED})\sqrt{d^2-d_p^2})^2
+      + d_p^2}
+    description: 目标栅格到信号线的空间距离
+  - name: 几何特征-目标栅格与信号线相对高度
+    latex: \Delta h_v = \Delta Z - |\Delta X|\tan(\theta_{ED}+\theta_{MD})
+    description: 目标栅格与信号线之间的垂直高度差
+  - name: 几何特征-目标栅格与信号线夹角
+    latex: \varphi = \arctan\left|\frac{A - \Delta Y/\Delta X}{1 + A\Delta Y/\Delta
+      X}\right|
+    description: 目标栅格到原点连线与信号线的夹角
+  - name: 均方误差损失函数
+    latex: L_{RMSE} = \frac{1}{N}\sum_{i=1}^{N}(\hat{p}^{(i)} - p^{(i)})^2
+    description: 神经网络训练的损失函数，衡量预测RSRP与真实值的偏差
+  - name: LeakyReLU激活函数
+    latex: f(x) = \max(0.01x, x)
+    description: 非线性激活函数，允许负值有小的梯度，避免神经元死亡
+  - name: BatchNormalization
+    latex: \hat{x} = \frac{x - E(x)}{\sqrt{Var(x)}}
+    description: 批正则化，将中间层输出拉回标准正态分布，缓解梯度消失
+  - name: Pearson相关系数
+    latex: \rho_{X,Y} = \frac{E(X,Y) - E(X)E(Y)}{\sqrt{E(X^2)-E^2(X)}\sqrt{E(Y^2)-E^2(Y)}}
+    description: 衡量特征与目标之间的线性相关性
+  - name: Spearman相关系数
+    latex: \rho_{X,Y} = 1 - \frac{6\sum_{i=1}^{N}(X_i' - Y_i')^2}{N(N^2-1)}
+    description: 基于排序的等级相关性系数，不要求正态分布假设
+  - name: 随机森林特征重要性
+    latex: P = \frac{\sum(Error_1 - Error_2)}{N_{tree}}
+    description: 通过扰动特征前后误差变化衡量特征重要性
+  algorithm_outline:
+  - language: python
+    description: 数据预处理与异常值剔除
+    code: "# 1. 遍历数据集检查缺失值\nassert df.isnull().sum().sum() == 0\n\n# 2. 检查同一文件内工程参数一致性\n\
+      for cell_file in all_files:\n    assert cell_file['Height'].nunique() == 1\n\
+      \    assert cell_file['Azimuth'].nunique() == 1\n\n# 3. 检查重复目标栅格点\nfor cell_file\
+      \ in all_files:\n    assert cell_file[['X','Y']].duplicated().sum() == 0\n\n\
+      # 4. 海拔异常值检测与剔除\n# 海拔低于470的值仅5条数据共2个点\noutlier_mask = df['Altitude'] < 470\n\
+      df_clean = df[~outlier_mask]\n\n# 5. 数据集划分\ntrain_df, val_df = train_test_split(df_clean,\
+      \ test_size=0.2, random_state=42)"
+  - language: python
+    description: 几何特征构造
+    code: "import numpy as np\n\ndef geometric_features(row):\n    dX = row['Cell_X']\
+      \ - row['X']\n    dY = row['Cell_Y'] - row['Y']\n    dZ = row['Height'] + row['Cell_Altitude']\
+      \ - row['Altitude'] - row['Building_Height']\n    \n    # 目标栅格与发射机栅格距离\n   \
+      \ d = np.sqrt(dX**2 + dY**2)\n    \n    # 目标栅格与天线距离\n    d_a = np.sqrt(dX**2\
+      \ + dY**2 + dZ**2)\n    \n    # 信号线在xoy平面投影距离\n    theta_A = np.radians(row['Azimuth'])\n\
+      \    if theta_A in [np.pi/2, 3*np.pi/2]:\n        A, B = 1, 0\n    elif theta_A\
+      \ in [0, np.pi]:\n        A, B = 0, 1\n    else:\n        A, B = 1/np.tan(theta_A),\
+      \ 1\n    d_p = abs(A*dX + B*dY) / np.sqrt(A**2 + B**2)\n    \n    # 目标栅格与信号线距离\n\
+      \    theta_MD = np.radians(row['Mechanical_Downtilt'])\n    theta_ED = np.radians(row['Electrical_Downtilt'])\n\
+      \    d_s = np.sqrt((dZ - np.tan(theta_ED + theta_MD)*np.sqrt(d**2 - d_p**2))**2\
+      \ + d_p**2)\n    \n    # 相对高度差\n    delta_h_v = dZ - abs(dX)*np.tan(theta_ED\
+      \ + theta_MD)\n    \n    # 夹角\n    if 1 + A*dY/dX != 0:\n        phi = np.arctan(abs((A\
+      \ - dY/dX) / (1 + A*dY/dX)))\n    else:\n        phi = np.pi/2\n    \n    return\
+      \ d, d_a, d_p, d_s, delta_h_v, phi"
+  - language: python
+    description: 特征选择与排序
+    code: 'from scipy.stats import pearsonr, spearmanr
+
+      from sklearn.ensemble import RandomForestRegressor
+
+
+      # 1. 方差计算
+
+      variances = X.var(axis=0)
+
+
+      # 2. Pearson相关系数
+
+      pearson_scores = [pearsonr(X[:,i], y)[0] for i in range(X.shape[1])]
+
+
+      # 3. Spearman相关系数
+
+      spearman_scores = [spearmanr(X[:,i], y)[0] for i in range(X.shape[1])]
+
+
+      # 4. 随机森林特征重要性
+
+      rf = RandomForestRegressor(n_estimators=100, random_state=42)
+
+      rf.fit(X, y)
+
+      rf_importance = rf.feature_importances_
+
+
+      # 5. 综合排名（四项排名取均值）
+
+      ranks = np.zeros((X.shape[1], 4))
+
+      ranks[:,0] = rankdata(-variances)
+
+      ranks[:,1] = rankdata(-np.abs(pearson_scores))
+
+      ranks[:,2] = rankdata(-np.abs(spearman_scores))
+
+      ranks[:,3] = rankdata(-rf_importance)
+
+      avg_rank = ranks.mean(axis=1)
+
+      final_score = 1 / avg_rank
+
+      sorted_idx = np.argsort(-final_score)'
+  - language: python
+    description: 五层神经网络模型构建与训练
+    code: "import torch\nimport torch.nn as nn\n\nclass RSRPNet(nn.Module):\n    def\
+      \ __init__(self, input_dim):\n        super().__init__()\n        self.net =\
+      \ nn.Sequential(\n            nn.Linear(input_dim, 256),\n            nn.BatchNorm1d(256),\n\
+      \            nn.LeakyReLU(0.01),\n            nn.Linear(256, 128),\n       \
+      \     nn.BatchNorm1d(128),\n            nn.LeakyReLU(0.01),\n            nn.Linear(128,\
+      \ 64),\n            nn.BatchNorm1d(64),\n            nn.LeakyReLU(0.01),\n \
+      \           nn.Linear(64, 32),\n            nn.BatchNorm1d(32),\n          \
+      \  nn.LeakyReLU(0.01),\n            nn.Linear(32, 1)\n        )\n    \n    def\
+      \ forward(self, x):\n        return self.net(x)\n\nmodel = RSRPNet(input_dim=n_features)\n\
+      optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)\ncriterion = nn.MSELoss()\n\
+      \nfor epoch in range(num_epochs):\n    model.train()\n    pred = model(X_train)\n\
+      \    loss = criterion(pred, y_train)\n    optimizer.zero_grad()\n    loss.backward()\n\
+      \    optimizer.step()\n    \n    model.eval()\n    with torch.no_grad():\n \
+      \       val_pred = model(X_val)\n        val_loss = criterion(val_pred, y_val)"
+  assumption_analysis:
+  - '假设1: 题目所提供的数据基本真实可靠，地图栅格化可靠，不会对结果带来较大影响 → 合理。栅格化5m×5m精度对于无线传播建模足够，但若栅格精度降低会引入较大误差'
+  - '假设2: 获取数据时测量基于相同环境，站点发射机天线型号参数相同，接收设备相同 → 合理但较强。实际中不同基站设备可能存在差异，放松此假设需引入设备相关特征'
+  - '假设3: 栅格上的信号强度仅受该栅格所在小区站点影响，不受其他站点信号干扰 → 较强假设。实际中相邻基站信号会相互干扰，放松后需考虑多基站联合建模'
+  - '假设4: 所有小区栅格内建筑为相似建筑，接收点为栅格上建筑顶端，栅格内无其他建筑 → 简化假设。实际建筑形态多样，放松后需引入更精细的建筑形态特征'
+  - '假设5: 栅格内地形均匀，同一海拔被建筑物完全填充，发射机栅格认为发射机被建筑物围绕 → 简化假设。实际地形复杂多变，放松后需考虑地形连续变化'
+  reusable_patterns:
+  - '经验模型引导特征工程: 从领域经验公式（如Cost 231-Hata）中提取非线性组合项作为特征输入机器学习模型，将专家知识嵌入数据驱动模型，降低模型学习难度'
+  - '几何特征系统构造: 建立三维坐标系，将物理场景抽象为几何模型，系统推导距离、角度、高度差等几何特征，适用于任何涉及空间位置关系的预测问题'
+  - '多维度特征评价体系: 综合方差（发散性）、Pearson（线性相关）、Spearman（等级相关）、随机森林（非线性重要性）四个维度对特征进行排名，取均值获得稳健排序'
+  - '渐进式模型复杂度提升: 从简单三层网络开始，观察训练/验证损失判断拟合程度，逐步增加层数和节点数，配合BatchNorm和LeakyReLU解决训练问题'
+  - '可视化驱动的数据清洗: 通过地图可视化快速发现异常点（如海拔突变点），结合统计量确认后剔除，比纯数值方法更直观高效'
+  common_pitfalls:
+  - mistake: 直接使用原始特征输入模型，不进行特征工程
+    solution: 原始特征方差差异不大且与目标非线性相关，应基于领域知识构造非线性组合特征（如对数变换、几何特征）
+  - mistake: 仅使用单一指标（如Pearson系数）评价特征重要性
+    solution: Pearson仅衡量线性相关且要求正态分布，应结合Spearman（等级相关）、方差（发散性）、随机森林（非线性重要性）多维度评价
+  - mistake: 对距离取对数时忽略距离为0的情况
+    solution: 当距离为0时对数值不存在，应根据物理意义令其为0（信号损耗为0）
+  - mistake: 神经网络层数过少导致欠拟合
+    solution: 通过观察训练集和验证集损失是否持平判断拟合程度，若持平且损失较高则增加层数和节点数
+  - mistake: 忽略数据不均衡问题对模型的影响
+    solution: 可视化发现数据分布不均衡，可通过采样更多数据点或根据先验知识分场景处理
+  difficulty: 3
+  difficulty_level: medium
+  analysis:
+    problem_summary: 基于工程参数、地图数据和RSRP实测数据，通过特征工程和深度学习建立无线信号传播预测模型
+    key_assumptions:
+    - 数据真实可靠且栅格化可靠
+    - 测量环境相同、设备参数一致
+    - 信号强度仅受本小区站点影响
+    - 栅格内建筑相似且接收点在建筑顶端
+    - 栅格内地形均匀
+    decision_variables: RSRP预测值 $\hat{p}$，特征向量 $X = (x_1, x_2, ..., x_n)$
+    objective: 最小化预测RSRP与真实RSRP之间的均方根误差，同时弱覆盖识别率不小于20%
+    constraints: 弱覆盖识别率 ≥ 20%；模型需在华为云平台部署并取得良好泛化性能
+  model:
+    approach: 本文采用'领域知识驱动特征工程 + 深度学习预测'的整体建模范式。首先通过可视化对数据进行宏观观察和清洗，剔除海拔异常点。然后从三个层面构造特征：(1)基于传统信道模型（Cost
+      231-Hata、SPM），提取经验公式中的非线性组合项作为特征；(2)基于几何位置信息，建立三维坐标系推导目标栅格与天线、信号线之间的距离、高度差、夹角等几何特征；(3)基于算法生成，通过多项式、对数、三角函数变换丰富特征集。特征选择阶段综合方差、Pearson、Spearman和随机森林四种方法进行排名。最后构建五层全连接神经网络，使用LeakyReLU激活和BatchNormalization，以Adam优化器训练，实现RSRP预测。
+    innovation: 将传统信道传播模型的专家经验系统性地转化为机器学习特征，特别是从Cost 231-Hata和SPM模型中提取非线性组合项，以及建立完整的三维几何特征体系，实现了领域知识与数据驱动方法的有效融合。
+    solution_method: Python（PyTorch深度学习框架），使用Adam优化器，五层全连接网络（含BatchNorm和LeakyReLU），在华为云平台部署测试
+  evaluation:
+    strengths:
+    - 特征工程系统全面，从经验模型、几何信息、算法生成三个维度构造特征，逻辑清晰
+    - 特征选择采用多指标综合排名，方法严谨
+    - 可视化分析贯穿始终，从数据探索到结果验证都有直观展示
+    - 模型在华为云测试集上获得前3%成绩，验证了方法的有效性
+    weaknesses:
+    - 未考虑多基站信号干扰，假设信号仅受本小区站点影响过于简化
+    - 数据不均衡问题未得到有效解决
+    - 神经网络超参数（层数、节点数、学习率）的选取缺乏系统性调优过程
+    - 未与其他机器学习方法（如XGBoost、LightGBM）进行对比实验
+    lessons: 这篇论文最重要的启示是：在复杂物理场景的机器学习建模中，领域知识驱动的特征工程往往比模型结构本身更重要。通过将传统经验模型中的非线性组合转化为特征，可以显著降低模型学习难度。同时，多维度特征评价体系（方差+Pearson+Spearman+随机森林）比单一指标更稳健。此外，可视化不仅是展示工具，更是发现数据问题和验证模型效果的重要手段。
+  takeaways: []
+  source: 中国研究生创新实践系列大赛'华为杯'第十六届中国研究生数学建模竞赛
+  quality_rating: 4

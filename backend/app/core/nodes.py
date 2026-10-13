@@ -44,6 +44,7 @@ from .node_helpers import (  # noqa: F401  (god-files 拆分 #31：辅助函数�
 from .prompts._shared import render_prompt
 from .prompts.classifier import CLASSIFIER_SYSTEM_PROMPT, CLASSIFIER_USER_TEMPLATE
 from .prompts.planner import PLANNER_SYSTEM_PROMPT, PLANNER_USER_TEMPLATE
+from .skill_context import catalog_for_problem
 
 
 def classify_problem(state: AgentState) -> dict:
@@ -423,8 +424,12 @@ def plan_execution(state: AgentState) -> dict:
     # 时间线按真实理由展示"方案思考"，而非写死的通用描述——审查 C1）
     execution_plan, plan_reasons = parse_execution_plan(plan)
 
+    # 技能目录：按题型解析一次写进 state。各 agent 节点按自己的角色取用，
+    # 并且**只有真正要用的技能才读正文**（对应 DSH skill 的「列举不读正文」）。
+    active_skills = catalog_for_problem(state.get("problem_type"))
+
     # 协议 v2.1：推送动态执行计划（前端按真实计划渲染时间线，而非写死步骤）；
-    # v2.2 附 reasons：每个步骤为什么出现在这道题的计划里
+    # v2.2 附 reasons：每个步骤为什么出现在这道题的计划里；v2.3 附 skills 目录
     _pub_event(
         task_id,
         "plan",
@@ -433,12 +438,14 @@ def plan_execution(state: AgentState) -> dict:
             "plan": execution_plan,
             "step_count": len(execution_plan),
             "reasons": plan_reasons,
+            "skills": active_skills,
         },
     )
 
     return {
         "execution_plan": execution_plan,
         "current_step_index": -1,
+        "active_skills": active_skills,
         "messages": [
             SystemMessage(
                 content=(

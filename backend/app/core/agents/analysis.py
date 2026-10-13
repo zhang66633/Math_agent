@@ -25,6 +25,7 @@ from ..prompts.analysis import (
     ANALYSIS_TEACH_USER_TEMPLATE,
     ANALYSIS_USER_TEMPLATE,
 )
+from ..skill_context import section_for_agent
 
 
 def analysis_agent_node(state: AgentState) -> dict:
@@ -69,6 +70,13 @@ def analysis_agent_node(state: AgentState) -> dict:
             problem=state["problem_raw"],
             problem_type=state["problem_type"],
         )
+
+    # 技能装配：按题型与本角色附加技能正文（app/skills，DSH skill 的「按需加载」）
+    skill_section = section_for_agent(
+        state.get("problem_type"), "analysis", state.get("active_skills")
+    )
+    if skill_section:
+        system_prompt += skill_section
 
     # 流式输出：逐 chunk 推 node_delta 事件（前端像 chat 一样逐字渲染）
     analysis_output, usage = invoke_streaming_with_retry(

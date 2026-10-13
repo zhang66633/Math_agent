@@ -32,6 +32,7 @@ from ..prompts.writing import (
     WRITING_TEACH_SYSTEM_PROMPT,
     WRITING_TEACH_USER_TEMPLATE,
 )
+from ..skill_context import section_for_agent
 
 # ── 论文章节规格（方案模式分章节写作）──────────────────────────────
 # 通用骨架 + 核心章「四、模型的建立与求解」按求解报告的子问题清单动态拆分。
@@ -179,6 +180,15 @@ def writing_agent_node(state: AgentState) -> dict:
         "verification": state.get("verification_output", "无"),
     }
 
+    # 技能装配：论文写作规范（app/skills）——摘要必须含结果数字、章节职责边界等
+    skill_section = section_for_agent(
+        state.get("problem_type"), "writing", state.get("active_skills")
+    )
+
+    def _with_skills(text: str) -> str:
+        """技能是附加规范，前置到提示词之前；未装配时原样返回。"""
+        return f"{skill_section}\n\n{text}" if skill_section else text
+
     # 核心章按求解报告的子问题动态拆分（替代旧的硬编码 PAPER_SECTIONS）
     paper_sections = build_paper_sections(state.get("solving_output", ""))
 
@@ -186,7 +196,7 @@ def writing_agent_node(state: AgentState) -> dict:
     _pub_event(task_id, "node_progress", "writing_agent", {"stage": "outline"})
     _outline_resp = invoke_with_retry(
         llm_outline,
-        [HumanMessage(content=WRITING_OUTLINE_PROMPT.format(**materials))],
+        [HumanMessage(content=_with_skills(WRITING_OUTLINE_PROMPT.format(**materials)))],
         task_id=task_id,
         node="writing_outline",
     )
@@ -207,11 +217,13 @@ def writing_agent_node(state: AgentState) -> dict:
             llm_for_section,
             [
                 HumanMessage(
-                    content=WRITING_SECTION_PROMPT.format(
-                        outline=outline,
-                        section_title=title,
-                        section_requirements=requirements,
-                        **materials,
+                    content=_with_skills(
+                        WRITING_SECTION_PROMPT.format(
+                            outline=outline,
+                            section_title=title,
+                            section_requirements=requirements,
+                            **materials,
+                        )
                     )
                 )
             ],

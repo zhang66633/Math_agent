@@ -30,6 +30,7 @@ from ..prompts.verification import (
     VERIFICATION_TEACH_USER_TEMPLATE,
     VERIFICATION_USER_TEMPLATE,
 )
+from ..skill_context import section_for_agent
 
 
 def verification_agent_node(state: AgentState) -> dict:
@@ -58,6 +59,13 @@ def verification_agent_node(state: AgentState) -> dict:
             model=_clip_head_tail(state.get("model_output", "无"), 3500),
             solving=_clip_head_tail(state.get("solving_output", "无"), 4500),
         )
+
+    # 技能装配：按题型与本角色附加技能正文（app/skills）——检验员拿到灵敏度分析规范
+    skill_section = section_for_agent(
+        state.get("problem_type"), "verification", state.get("active_skills")
+    )
+    if skill_section:
+        system_prompt += skill_section
 
     # 流式输出：逐 chunk 推 node_delta 事件（前端像 chat 一样逐字渲染）
     full_text, usage = invoke_streaming_with_retry(

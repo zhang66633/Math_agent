@@ -25,6 +25,7 @@ from ..prompts.modeling import (
     MODELING_TEACH_USER_TEMPLATE,
     MODELING_USER_TEMPLATE,
 )
+from ..skill_context import section_for_agent
 
 
 def modeling_agent_node(state: AgentState) -> dict:
@@ -63,6 +64,13 @@ def modeling_agent_node(state: AgentState) -> dict:
             analysis=state.get("analysis_output", "无分析结果"),
             problem_type=state["problem_type"],
         )
+
+    # 技能装配：按题型与本角色附加技能正文（app/skills）——建模是技能收益最大的环节
+    skill_section = section_for_agent(
+        state.get("problem_type"), "modeling", state.get("active_skills")
+    )
+    if skill_section:
+        system_prompt += skill_section
 
     # ── 验证反馈闭环（协议 v2.1）：回退重跑时注入上次验证 FAIL 原因，
     #    让建模针对性地修正，而不是盲目重试 ──

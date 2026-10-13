@@ -29,6 +29,9 @@ class AgentState(TypedDict):
     kb_templates: list[dict]
     kb_problems: list[dict]
 
+    # --- 技能装配（app/skills）：规划阶段定下的技能目录，各节点按角色取用 ---
+    active_skills: list[str]
+
     # --- 动态执行计划 ---
     execution_plan: list[
         str

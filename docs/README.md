@@ -9,6 +9,7 @@
 |------|------|
 | [ARCHITECTURE_REVIEW.md](./ARCHITECTURE_REVIEW.md) | 2026-09 架构全面审查：实测数据、P0/P1/P2 问题清单、三条简化路线（A 文档与入口统一 / B 结构收敛 / C 内容模型合并）与目标架构图 |
 | [learning-system.md](./learning-system.md) | 学习系统设计（技能树 / 掌握度追踪 / 题库 / 61 个学习单元） |
+| [agent-skills.md](./agent-skills.md) | 智能体能力升级：技能系统（按题型装配提示词）+ Agent 注册表（定义外置 YAML），含踩坑记录 |
 | [roadmap.md](./roadmap.md) | 资源清单与开发路线图 |
 | [resources/README.md](./resources/README.md) | 外部资源索引（竞赛真题/优秀论文/数据集/教程/模板，2026-10 深度搜索整理，含可执行动作） |
 | [deploy-cloud.md](./deploy-cloud.md) | 云服务器部署指南 |

@@ -34,23 +34,8 @@ def _uid(user: GitHubUser | None) -> str:
 # ── 学习路径 ──────────────────────────────────────────
 
 
-class GeneratePathRequest(BaseModel):
-    role: str = "modeler"  # modeler | programmer | writer
-    level: str = "beginner"  # beginner | intermediate | advanced
-    goal: str = "国赛"  # 国赛 | 美赛 | 兴趣
-
-
 class PathResponse(BaseModel):
     path: LearningPath
-
-
-@learning_router.post("/path/generate", response_model=PathResponse)
-async def generate_path(req: GeneratePathRequest):
-    """为指定角色和水平生成学习路径."""
-    role = AgentRole(req.role)
-    level = UserLevel(req.level)
-    path = generate_learning_path(role=role, level=level, goal=req.goal)
-    return PathResponse(path=path)
 
 
 @learning_router.get("/path/{role}", response_model=PathResponse)

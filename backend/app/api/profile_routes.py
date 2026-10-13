@@ -87,17 +87,6 @@ async def get_profile(user: GitHubUser | None = Depends(get_current_user)):
     return ProfileResponse(profile=profile)
 
 
-@profile_router.put("/roles", response_model=ProfileResponse)
-async def update_roles(
-    roles: list[dict],
-    user: GitHubUser | None = Depends(get_current_user),
-):
-    """更新角色配置."""
-    profile = _get_or_create(_uid(user))
-    profile.roles = [RoleProfile(**r) for r in roles]
-    return ProfileResponse(profile=profile)
-
-
 @profile_router.get("/progress", response_model=dict)
 async def get_progress(user: GitHubUser | None = Depends(get_current_user)):
     """成长档案数据: 统计大屏/日历热力图/勋章墙(带进度)/待复习/角色掌握度。"""

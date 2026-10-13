@@ -11,7 +11,6 @@ from .apikeys import apikeys_router
 from .chat_routes import chat_router
 from .export_routes import export_router
 from .files import files_router
-from .knowledge_import_routes import import_router
 from .knowledge_routes import knowledge_router
 from .learning_routes import learning_router
 from .profile_routes import profile_router
@@ -30,7 +29,6 @@ api_router.include_router(apikeys_router)
 api_router.include_router(tasks_router)
 api_router.include_router(files_router)
 api_router.include_router(export_router)
-api_router.include_router(import_router)
 api_router.include_router(learning_router)
 api_router.include_router(profile_router)
 api_router.include_router(session_router)

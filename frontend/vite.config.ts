@@ -19,6 +19,12 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: 5174,
+      watch: {
+        // 编辑工具/部分 IDE 落盘时会先写临时文件或临时目录。Windows 上 watcher 撞到
+        // 被占用的临时路径会直接抛 EBUSY 并**终止 dev server**（本机实测崩了三次）。
+        // 在配置层排除这些路径，比「崩一次重启一次」靠谱。
+        ignored: ["**/*.tmpdir/**", "**/*.tmp", "**/.*.tmp"],
+      },
       // 开发期强制不缓存: 部分浏览器(360/搜狗/Edge 增强缓存)会忽略 no-cache
       // 导致「框架是旧的、资料空白」类问题,no-store 从根上禁止复用缓存
       headers: {

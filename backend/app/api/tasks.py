@@ -207,6 +207,7 @@ async def get_task_status(task_id: str, user: GitHubUser | None = Depends(get_cu
       - latest_stage: 最新完成的阶段
       - resume_stage: 下一步应执行的阶段（None 表示已完成）
       - is_active: 是否有未完成的任务
+      - problem_doc: 问题状态文档（由各阶段检查点确定性拼装，无 LLM 调用）
     """
     # 先校验属主再碰 WorkingMemory——否则 task_id 可被遍历探测他人进度
     _owned_task_or_404(task_id, resolve_user_id(user))
@@ -219,6 +220,7 @@ async def get_task_status(task_id: str, user: GitHubUser | None = Depends(get_cu
         "latest_stage": wm.get_latest_stage(),
         "resume_stage": wm.get_resume_stage(),
         "is_active": wm.is_active(),
+        "problem_doc": wm.get_problem_doc(),
     }
 
 

@@ -1,18 +1,17 @@
 """工作记忆 — 方案模式问题状态文档 + 阶段检查点。
 
 每个 solution 会话维护:
-  - problem_doc.md:       持续更新的问题状态文档（LLM 整体重写）
+  - problem_doc.md:       问题状态文档（由各阶段检查点**确定性拼装**，无 LLM 调用）
   - checkpoints/*.json:   每个阶段独立的检查点（可恢复）
-  - problem_doc.*.bak:    重写前快照（保留 10 份）
+  - meta.json:            会话元数据（原始问题等，供拼装时引用）
 
-设计参考: MEMORY_CONTEXT_GUIDE.md §5.1
+设计参考: MEMORY_CONTEXT_GUIDE.md §5.1 / §5.3
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -43,37 +42,33 @@ STAGE_LABELS = {
     "writing": "七、论文写作",
 }
 
-# ── 重写 prompt ─────────────────────────────────────────────
+def _strip_leading_heading(text: str | None) -> str:
+    """去掉摘要自带的一级/二级标题行。
 
-REWRITE_PROMPT = """你是一个数学建模问题状态管理器。根据已完成阶段的最新输出，更新下面的问题状态文档。
+    章节名（`## 三、问题分析`）已经由拼装层给出，而各节点产出常以自己的
+    `## 问题分析` 开头，直接拼会出现两级同名标题。只去**开头连续**的标题行，
+    不动正文里的标题。
+    """
+    lines = (text or "").strip().splitlines()
+    while lines and lines[0].lstrip().startswith("#"):
+        lines.pop(0)
+    return "\n".join(lines).strip()
 
-## 当前文档
-{current_doc}
 
-## 本次新增阶段: {stage_label}
-{stage_output}
-
-## 已完成的全部阶段
-{completed_stages}
-
-## 规则
-1. 这是状态档案，不是日志。每个章节记录"结论是什么"，不是"发生了什么"
-2. 整合新内容到对应章节，保持结构清晰
-3. 合并重复信息，删除矛盾内容（以最新为准）
-4. 总字数控制在 3000 字以内
-5. 如果新内容与已有内容无实质变化，只更新对应章节
-6. 保持 Markdown 格式，按以下章节结构组织:
-
-# 问题状态文档
-- 一、问题分类（问题类型、复杂度、数据依赖）
-- 二、知识检索（推荐方法、参考论文、匹配模板）
-- 三、问题分析（结构化分析结果）
-- 四、模型建立（模型假设、公式、变量定义）
-- 五、求解计算（代码要点、求解结果、图表）
-- 六、验证分析（验证结论、灵敏度、改进方向）
-- 七、论文写作（论文全文摘要）
-
-输出完整的新文档（不是 diff）："""
+# ── 废弃实现的墓碑（为什么没有 LLM 重写版了） ─────────────────
+# 曾经有一版「LLM 整体重写问题状态文档」的实现（REWRITE_PROMPT +
+# update_problem_doc），已删除。原因记录在此，免得后人重新踩：
+#
+#   1. 它靠 `asyncio.get_event_loop().run_in_executor(...)` 异步触发，而图节点
+#      跑在 langgraph 的线程池 worker 里——那些线程没有运行中的事件循环，
+#      get_event_loop() 恒抛 RuntimeError，被 except 静默跳过。生产环境里
+#      从未生效过一次（审计 2026-10-14 实证：所有真实任务的 problem_doc.md
+#      都是 init_session 写的初始模板，七个章节全「（待完成）」）。
+#   2. 即使修好机制，它每个阶段要多打一次 LLM（约 7 次/任务），而当时
+#      get_problem_doc() 全仓库零调用方——花了钱没人看。
+#
+# 现在的实现是确定性拼装（见 refresh_problem_doc）：只读检查点 JSON，纯文件 IO，
+# 可同步调用，并通过 GET /api/tasks/{id}/status 的 problem_doc 字段暴露给前端。
 
 
 class WorkingMemory:
@@ -85,51 +80,38 @@ class WorkingMemory:
         self.session_dir = settings.project_root / "data" / "sessions" / session_id
         self.checkpoints_dir = self.session_dir / "checkpoints"
         self.problem_doc_path = self.session_dir / "problem_doc.md"
-        self.messages_path = self.session_dir / "messages.json"
-        self._max_backups = 10
+        self.meta_path = self.session_dir / "meta.json"
 
     # ── 初始化 ──────────────────────────────────────────────
 
     def init_session(self, problem_raw: str) -> None:
-        """新建会话目录 + 初始 problem_doc。"""
+        """新建会话目录 + 初始 problem_doc + meta。"""
         self.session_dir.mkdir(parents=True, exist_ok=True)
         self.checkpoints_dir.mkdir(parents=True, exist_ok=True)
 
+        # meta：拼装 problem_doc 时要引用原始问题（曾被 init_session 写进模板后
+        # 就再也读不回来，因为模板会被 refresh 覆盖）。
+        self._atomic_write_json(
+            self.meta_path,
+            {
+                "session_id": self.session_id,
+                "problem_raw": problem_raw,
+                "created_at": datetime.now(UTC).isoformat(),
+            },
+        )
+
         if not self.problem_doc_path.exists():
-            initial = f"""# 问题状态文档
-
-## 一、问题分类
-（待完成）
-
-## 二、知识检索
-（待完成）
-
-## 三、问题分析
-（待完成）
-
-## 四、模型建立
-（待完成）
-
-## 五、求解计算
-（待完成）
-
-## 六、验证分析
-（待完成）
-
-## 七、论文写作
-（待完成）
-
----
-
-**原始问题**:
-{problem_raw[:500]}
-"""
-            self._atomic_write(self.problem_doc_path, initial)
+            self._atomic_write(self.problem_doc_path, self._render_doc({}))
 
     # ── 检查点 ──────────────────────────────────────────────
 
     def save_checkpoint(self, stage: str, output: str, extra: dict | None = None) -> Path:
-        """保存阶段检查点。返回 checkpoint 文件路径。"""
+        """保存阶段检查点，并连带刷新问题状态文档。返回 checkpoint 文件路径。
+
+        刷新放在这里而不是交给调用方：否则「存了检查点但忘了刷文档」会让
+        problem_doc.md 悄悄过期——那正是死功能时代的症状。检查点写成功是硬保证，
+        文档刷新失败只告警（不阻塞主流程）。
+        """
         self.checkpoints_dir.mkdir(parents=True, exist_ok=True)
         data = {
             "stage": stage,
@@ -141,6 +123,10 @@ class WorkingMemory:
         }
         path = self.checkpoints_dir / f"{stage}.json"
         self._atomic_write_json(path, data)
+        try:
+            self.refresh_problem_doc()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("检查点已保存，但问题状态文档刷新失败 (%s): %s", self.session_id, e)
         return path
 
     def load_checkpoint(self, stage: str) -> dict | None:
@@ -189,69 +175,47 @@ class WorkingMemory:
             return self.problem_doc_path.read_text(encoding="utf-8")
         return ""
 
-    def update_problem_doc(
-        self,
-        stage: str,
-        stage_output: str,
-        completed_stages: list[str] | None = None,
-    ) -> str | None:
-        """用 LLM 整体重写问题状态文档。
-
-        Returns:
-            新文档内容，LLM 不可用时返回 None。
-        """
-        current = self.get_problem_doc()
-        if not current:
-            return None
-
-        completed = completed_stages or self.get_completed_stages()
-        stage_label = STAGE_LABELS.get(stage, stage)
-        completed_labels = ", ".join(STAGE_LABELS.get(s, s) for s in completed)
-
-        prompt = REWRITE_PROMPT.format(
-            current_doc=current,
-            stage_label=stage_label,
-            stage_output=stage_output[:3000],
-            completed_stages=completed_labels,
-        )
-
+    def _load_meta(self) -> dict:
+        if not self.meta_path.exists():
+            return {}
         try:
-            from ..core.llm.factory import get_llm
+            return json.loads(self.meta_path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
 
-            llm = get_llm("analysis")  # 用 analysis 模型做轻量重写
-            response = llm.invoke(prompt)
-            new_doc = str(response.content).strip()
-        except Exception as e:
-            logger.warning("LLM 整体重写失败，跳过: %s", e)
-            return None
+    def _render_doc(self, summaries: dict[str, str]) -> str:
+        """把各阶段摘要拼成问题状态文档（纯函数，便于测试）。"""
+        lines = ["# 问题状态文档", ""]
+        for stage in STAGE_ORDER:
+            lines.append(f"## {STAGE_LABELS[stage]}")
+            lines.append(_strip_leading_heading(summaries.get(stage)) or "（待完成）")
+            lines.append("")
+        problem_raw = (self._load_meta().get("problem_raw") or "").strip()
+        if problem_raw:
+            lines.append("---")
+            lines.append("")
+            lines.append("**原始问题**:")
+            lines.append(problem_raw[:500])
+            lines.append("")
+        return "\n".join(lines)
 
-        if not new_doc or len(new_doc) < 50:
-            logger.warning("LLM 重写输出过短，跳过更新")
-            return None
+    def refresh_problem_doc(self) -> str:
+        """用各阶段检查点重新拼装问题状态文档并落盘，返回新内容。
 
-        # 备份旧版本
-        self._backup_problem_doc()
-
-        # 原子写入新版本
+        确定性实现，**不调 LLM**：取代已废弃的 LLM 整体重写版
+        （废弃原因见文件顶部「墓碑」注释——那版在生产环境从未生效过）。
+        纯文件 IO，可在节点线程里同步调用；没有检查点时就当不存在，直接返回。
+        """
+        if not self.problem_doc_path.exists():
+            return ""
+        summaries = {
+            stage: (cp.get("output_summary") or "").strip()
+            for stage in STAGE_ORDER
+            if (cp := self.load_checkpoint(stage))
+        }
+        new_doc = self._render_doc(summaries)
         self._atomic_write(self.problem_doc_path, new_doc)
         return new_doc
-
-    # ── 消息持久化 ──────────────────────────────────────────
-
-    def save_messages(self, messages: list[dict]) -> None:
-        """持久化前端展示消息（原子写入）。"""
-        self.session_dir.mkdir(parents=True, exist_ok=True)
-        self._atomic_write_json(self.messages_path, messages)
-
-    def load_messages(self) -> list[dict]:
-        """加载持久化的消息列表。"""
-        if not self.messages_path.exists():
-            return []
-        try:
-            return json.loads(self.messages_path.read_text(encoding="utf-8"))
-        except Exception:
-            logger.warning("消息文件损坏: %s", self.messages_path)
-            return []
 
     # ── 会话状态 ────────────────────────────────────────────
 
@@ -263,22 +227,6 @@ class WorkingMemory:
         return len(completed) > 0 and len(completed) < len(STAGE_ORDER)
 
     # ── 工具方法 ────────────────────────────────────────────
-
-    def _backup_problem_doc(self) -> None:
-        """备份当前 problem_doc，保留最近 N 份。"""
-        if not self.problem_doc_path.exists():
-            return
-        # 清理旧备份
-        backups = sorted(self.session_dir.glob("problem_doc.*.bak"))
-        for old in backups[: -(self._max_backups - 1)]:
-            try:
-                old.unlink()
-            except Exception:
-                pass
-        # 创建新备份
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_path = self.session_dir / f"problem_doc.{ts}.bak"
-        shutil.copy2(self.problem_doc_path, backup_path)
 
     @staticmethod
     def _atomic_write(path: Path, content: str) -> None:

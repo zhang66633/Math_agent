@@ -46,11 +46,15 @@ def test_achievement_unlock_and_ack(tmp_path):
 
 
 if __name__ == "__main__":
-    # 每次运行用唯一库名，避免持久化状态泄漏（旧库文件留 data/ 目录，属 gitignored 运行时垃圾）
-    import uuid
+    # 直跑入口也走系统临时目录：曾经写死 Path("data")，每次直跑都在运行数据目录
+    # 留一堆 test_learning*.db（审计 2026-10-14 点名的测试残渣，与真实
+    # learning.db / practice.db 混放，排查时极易看错）。
+    import tempfile
+    from pathlib import Path as _Path
 
-    rid = uuid.uuid4().hex[:6]
-    test_event_persistence(Path("data") / f"test_learning_{rid}.db")
-    test_active_dates(Path("data") / f"test_learning2_{rid}.db")
-    test_achievement_unlock_and_ack(Path("data") / f"test_learning3_{rid}.db")
+    with tempfile.TemporaryDirectory(prefix="mma_test_learning_") as _td:
+        base = _Path(_td)
+        test_event_persistence(base / "learning.db")
+        test_active_dates(base / "learning2.db")
+        test_achievement_unlock_and_ack(base / "learning3.db")
     print("ALL TESTS PASSED")

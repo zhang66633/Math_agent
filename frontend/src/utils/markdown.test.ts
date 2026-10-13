@@ -117,6 +117,33 @@ describe("KaTeX 公式", () => {
   it("坏公式不崩溃（throwOnError=false 产出错误占位而非抛异常）", () => {
     expect(() => renderMarkdown("$\\frac{1}{}$")).not.toThrow();
   });
+
+  it("真实论文片段：align 环境 + 表格内公式 + 正文行内公式都被渲染", async () => {
+    const paper = [
+      "# 模型建立",
+      "",
+      "$$\\begin{aligned} \\max\\ Z &= 5x_1 + 4x_2 \\\\ \\text{s.t.}\\quad 2x_1 + x_2 &\\le 100 \\end{aligned}$$",
+      "",
+      "| 变量 | 含义 | 约束 |",
+      "| --- | --- | --- |",
+      "| $x_1$ | 甲产量 | $x_1 \\ge 0$ |",
+      "",
+      "其中 $2x_1 + x_2 \\le 100$ 为原料 A 的约束。",
+    ].join("\n");
+    const html = await renderMarkdownAsync(paper);
+    expect(html).toContain('class="katex"');
+    expect(html).toContain("katex-display");
+    expect(html).not.toContain("katex-error");
+    expect(html).not.toContain("$$"); // 公式标记不得残留
+    expect(html).toContain("<td>"); // 表格未被公式渲染破坏
+  });
+
+  it("公式的 style 与 MathML 未被 DOMPurify 洗掉（配置漂移护栏）", () => {
+    const html = renderMarkdown("$$\\frac{a}{b}$$");
+    // KaTeX 依赖这两个产物才能正确排版：内联 style 与 MathML 序列化
+    expect(html).toMatch(/style=/);
+    expect(html).toMatch(/<math/);
+  });
 });
 
 describe("extractToc", () => {

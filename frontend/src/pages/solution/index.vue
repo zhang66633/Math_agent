@@ -13,11 +13,16 @@
         :is-running="chatSession.getIsRunning('solution')"
         :cancellable="!!currentTaskId"
         :cancelling="cancelling"
+        :session-title="chatSession.activeSolutionSession?.title ?? '新方案'"
+        :fold-tool-images="true"
+        :show-artifacts="false"
         empty-text="开始建模"
         empty-subtext="描述你的问题，我将输出完整建模方案和论文"
         input-placeholder="描述你想解决的建模问题..."
         @send="handleUserSend"
         @cancel="handleCancel"
+        @clear="chatSession.clearSession('solution')"
+        @new-session="chatSession.newSession('solution')"
         @open-paper="openPaperViewer"
       />
     </div>
@@ -36,109 +41,18 @@
           Task ID: {{ currentTaskId }}
         </div>
 
-        <!-- 交付物面板（dsh 式 deliverables：图表 / 数据文件 / 文档导出统一 dock） -->
-        <div v-if="currentTaskId" class="mt-4">
-          <p class="flex items-center gap-1.5 text-xs font-semibold text-foreground mb-1">
-            <Package class="h-3.5 w-3.5 text-primary" />
-            交付物
-          </p>
-
-          <!-- 图表组：缩略图网格，点击放大预览 -->
-          <template v-if="figureFiles.length">
-            <p class="font-mono text-[10px] uppercase tracking-wider text-muted-foreground/60 mt-3 mb-1.5">
-              图表 {{ figureFiles.length }}
-            </p>
-            <div class="grid grid-cols-3 gap-1.5">
-              <button
-                v-for="f in figureFiles"
-                :key="f.url"
-                class="group relative aspect-square overflow-hidden rounded-md border border-border hover:border-primary/50 transition-colors"
-                :title="f.name"
-                @click="previewImage = f.url"
-              >
-                <img :src="f.url" class="h-full w-full object-cover" loading="lazy" />
-              </button>
-            </div>
-          </template>
-
-          <!-- 数据文件组 -->
-          <template v-if="dataFiles.length">
-            <p class="font-mono text-[10px] uppercase tracking-wider text-muted-foreground/60 mt-3 mb-1.5">
-              数据文件
-            </p>
-            <div class="space-y-1">
-              <div
-                v-for="f in dataFiles"
-                :key="f.url"
-                class="flex items-center gap-2 rounded-md border px-2 py-1.5 text-xs hover:bg-accent transition-colors"
-              >
-                <FileSpreadsheet v-if="f.name.endsWith('.xlsx') || f.name.endsWith('.xls')" class="h-4 w-4 text-green-500 shrink-0" />
-                <Table v-else-if="f.name.endsWith('.csv')" class="h-4 w-4 text-blue-500 shrink-0" />
-                <FileText v-else-if="f.name.endsWith('.html')" class="h-4 w-4 text-orange-500 shrink-0" />
-                <Archive v-else-if="f.name.endsWith('.zip')" class="h-4 w-4 text-purple-500 shrink-0" />
-                <Paperclip v-else class="h-4 w-4 text-muted-foreground shrink-0" />
-                <span class="flex-1 truncate" :title="f.name">{{ f.name }}</span>
-                <a
-                  :href="f.url"
-                  :download="f.name"
-                  class="text-muted-foreground hover:text-foreground shrink-0"
-                  title="下载"
-                >
-                  <Download class="h-3.5 w-3.5" />
-                </a>
-              </div>
-            </div>
-          </template>
-
-          <!-- 文档导出组（任务完成后） -->
-          <template v-if="taskStore.completed">
-            <p class="font-mono text-[10px] uppercase tracking-wider text-muted-foreground/60 mt-3 mb-1.5">
-              文档导出
-            </p>
-            <div class="space-y-1.5">
-              <button
-                class="flex items-center gap-2 w-full rounded-md border px-3 py-2 text-sm hover:bg-accent transition-colors"
-                @click="downloadExport('md')"
-              >
-                <FileText class="h-4 w-4" /> Markdown (.md)
-              </button>
-              <button
-                class="flex items-center gap-2 w-full rounded-md border px-3 py-2 text-sm hover:bg-accent transition-colors"
-                @click="downloadExport('docx')"
-              >
-                <FileDown class="h-4 w-4" /> Word (.docx)
-              </button>
-              <button
-                v-if="hasXlsxFile"
-                class="flex items-center gap-2 w-full rounded-md border px-3 py-2 text-sm hover:bg-accent transition-colors"
-                @click="downloadExport('xlsx')"
-              >
-                <FileSpreadsheet class="h-4 w-4" /> Excel (.xlsx)
-              </button>
-              <button
-                v-if="hasCsvFile"
-                class="flex items-center gap-2 w-full rounded-md border px-3 py-2 text-sm hover:bg-accent transition-colors"
-                @click="downloadExport('csv')"
-              >
-                <Table class="h-4 w-4" /> CSV (.csv)
-              </button>
-              <button
-                class="flex items-center gap-2 w-full rounded-md border px-3 py-2 text-sm hover:bg-accent transition-colors"
-                @click="downloadPackage"
-              >
-                <Archive class="h-4 w-4" /> 完整结果包 (.zip)
-              </button>
-            </div>
-          </template>
-
-          <!-- 空状态 -->
-          <div
-            v-if="taskFiles.length === 0 && !taskStore.completed"
-            class="mt-2 text-[11px] text-muted-foreground"
-          >
-            上传的题目/数据与生成的图表将显示在这里
-          </div>
-        </div>
+        <!-- 交付物面板（dsh 式 deliverables：图表 / 数据文件 / 文档导出统一 dock）
+             分组、正文/过程标注与尺寸展示都在组件内，便于单测与复用 -->
+        <DeliverablesPanel
+          v-if="currentTaskId"
+          :files="taskFiles"
+          :paper-markdown="paperMarkdown"
+          :completed="taskStore.completed"
+          @preview="previewImage = $event"
+          @refresh="refreshTaskFiles"
+          @export="downloadExport"
+          @package="downloadPackage"
+        />
       </div>
     </Transition>
 
@@ -180,21 +94,15 @@ import ProgressTimeline, {
   type ProgressStep,
 } from "@/components/ProgressTimeline.vue";
 import PaperViewer from "@/components/paper/PaperViewer.vue";
+import DeliverablesPanel, {
+  type TaskFile,
+} from "@/components/solution/DeliverablesPanel.vue";
+import { toast } from "@/composables/useToast";
+import type { ChatSession } from "@/stores/chatSession";
 import { useChatSessionStore } from "@/stores/chatSession";
 import { useTaskStore } from "@/stores/task";
 import type { Message } from "@/types/response";
-import {
-  Archive,
-  Download,
-  FileDown,
-  FileSpreadsheet,
-  FileText,
-  Package,
-  PanelRight,
-  Paperclip,
-  Table,
-  X,
-} from "lucide-vue-next";
+import { PanelRight, X } from "lucide-vue-next";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 const chatSession = useChatSessionStore();
@@ -209,13 +117,15 @@ const rightPanelOpen = ref(true);
 const currentTaskId = ref<string | null>(null);
 const cancelling = ref(false);
 
-// 文件区：任务的附件 + 生成文件
-interface TaskFile {
-  type: string;
-  name: string;
-  url: string;
-  size?: number;
-}
+/** 当前任务归属的会话 id。
+ *
+ * 为什么不让同步逻辑直接用 `activeSolutionId`：任务跑着的时候用户可能在
+ * 侧栏切到另一个方案会话，进度消息会被写进**别人的**会话（跨会话串消息）。
+ * 任务一旦创建就锁定归属会话，回放/切换都以它为准。
+ */
+const taskSessionId = ref<string | null>(null);
+
+// 文件区：任务的附件 + 生成文件（类型与后端 TaskArtifact 对齐）
 const taskFiles = ref<TaskFile[]>([]);
 
 async function fetchTaskFiles(taskId: string) {
@@ -225,6 +135,11 @@ async function fetchTaskFiles(taskId: string) {
   } catch {
     taskFiles.value = [];
   }
+}
+
+/** 手动刷新交付物列表（长任务里文件是分阶段落盘的，不想等事件就点一下）。 */
+function refreshTaskFiles() {
+  if (currentTaskId.value) void fetchTaskFiles(currentTaskId.value);
 }
 
 // 任务确定后拉一次文件区；任务完成（求解出图后）再刷新一次
@@ -376,17 +291,30 @@ const displayMessages = computed<Message[]>(() => {
   return result;
 });
 
-/** 把 taskStore 推送的进度/final 消息同步到 chatSession（持久化）。 */
+/** 把 taskStore 推送的进度/final 消息同步到**任务归属会话**（持久化）。
+ *
+ * 用 taskSessionId 而不是 activeSolutionId：任务跑着时用户可能切到别的
+ * 方案会话，按 active 写入会把 A 任务的进度塞进 B 会话（跨会话串消息）。
+ * 归属缺失（旧数据/刷新前）才退化为当前活动会话。
+ */
 function syncTaskMsgToSession(msg: Message) {
-  const sid = chatSession.activeSolutionId;
+  const sid = taskSessionId.value ?? chatSession.activeSolutionId;
   if (!sid) return;
-  const list = chatSession.activeSolutionMessages;
-  const existing = list.find((m) => m.id === msg.id);
+  const session = chatSession.solutionSessions.find((s) => s.id === sid);
+  const existing = session?.messages.find((m) => m.id === msg.id);
   if (existing) {
     // 已存在则更新内容（关键：fetchFullFinalResponse 会用完整论文替换
     // 800字预览占位消息，若此处跳过，chatSession 将永远停留在旧预览，
     // 导致完整论文不显示、导出 PDF 只有截断的预览）
+    //
+    // 反向保护：论文消息**不允许被更短的内容覆盖**。事件回放会先推
+    // final_response_preview（截断预览），若此时本地已有完整论文，
+    // 直接覆盖会让全文退回预览（拉全文失败就永久截断）。
     if (existing.content !== msg.content) {
+      const isPaper = typeof msg.id === "string" && msg.id.startsWith("final-");
+      const cur = existing.content ?? "";
+      const next = msg.content ?? "";
+      if (isPaper && next.length < cur.length) return;
       chatSession.updateMessage("solution", sid, msg.id, {
         content: msg.content,
       });
@@ -451,6 +379,8 @@ async function handleUserSend(text: string, files?: ChatFileRef[]) {
     const taskId = res.data?.task_id ?? res.data?.data?.task_id;
     if (!taskId) throw new Error("未返回 task_id");
     currentTaskId.value = taskId;
+    // 锁定任务归属会话：此后进度消息只写进这个会话（用户切走也不串）
+    taskSessionId.value = sessionId;
     // 写入 session 持久化（刷新恢复依赖它：onMounted 读 session.taskId 回放）
     const sess = chatSession.activeSolutionSession;
     if (sess) sess.taskId = taskId;
@@ -531,28 +461,15 @@ async function downloadPackage() {
   }
 }
 
-/** 是否有导出文件（xlsx/csv） */
-const hasXlsxFile = computed(() =>
-  taskFiles.value.some((f) => f.name.endsWith(".xlsx")),
-);
-const hasCsvFile = computed(() =>
-  taskFiles.value.some((f) => f.name.endsWith(".csv")),
+/** 论文正文（`final-` 消息）的 Markdown 全文。
+ *  交付物面板据此标注哪张图真的进了正文（见 DeliverablesPanel）。 */
+const paperMarkdown = computed(
+  () =>
+    displayMessages.value.find(
+      (m) => typeof m.id === "string" && m.id.startsWith("final-"),
+    )?.content ?? "",
 );
 
-// ── 交付物面板分组 ──
-const IMAGE_SUFFIX_RE = /\.(png|jpg|jpeg|gif|webp)$/i;
-/** 图表文件（缩略图网格展示） */
-const figureFiles = computed(() =>
-  taskFiles.value.filter(
-    (f) => f.type === "figure" || IMAGE_SUFFIX_RE.test(f.name),
-  ),
-);
-/** 数据/结果文件（列表展示） */
-const dataFiles = computed(() =>
-  taskFiles.value.filter(
-    (f) => f.type !== "figure" && !IMAGE_SUFFIX_RE.test(f.name),
-  ),
-);
 /** 图表大图预览 */
 const previewImage = ref<string | null>(null);
 
@@ -568,12 +485,58 @@ function openPaperViewer() {
   if (paperMsg?.content) {
     paperContent.value = paperMsg.content;
     showPaperViewer.value = true;
+    return;
   }
+  // 论文还没生成（任务在跑/失败/被取消）→ 明确告知，旧实现点了没反应
+  toast(
+    taskStore.isRunning
+      ? "论文还在生成中，完成后可阅读全文"
+      : "本任务还没有论文正文",
+    "info",
+  );
 }
 
 function closePaperViewer() {
   showPaperViewer.value = false;
 }
+
+/**
+ * 把「当前视图」切到某个方案会话对应的任务。
+ *
+ * 会话与任务是 1:1（session.taskId）。切换会话必须同时换任务视图，
+ * 否则 displayMessages 会把新会话的消息和上一个任务的进度气泡拼在一起，
+ * 右栏也会继续显示旧任务的图表/文件（旧实现只切 activeSolutionId）。
+ */
+function applySessionTask(sess: ChatSession | null) {
+  const storedTaskId = sess?.taskId ?? null;
+  taskSessionId.value = sess?.id ?? null;
+
+  // 同一个任务（用户只是切回来）→ 保留 WS 连接与已缓存的进度
+  if (storedTaskId && storedTaskId === currentTaskId.value) return;
+
+  currentTaskId.value = storedTaskId;
+  taskFiles.value = [];
+  if (!storedTaskId) {
+    taskStore.clearTaskView();
+    return;
+  }
+  taskStore.setCurrentTask(storedTaskId);
+  taskStore.fetchTaskEvents(storedTaskId);
+  fetchTaskFiles(storedTaskId);
+  getTask(storedTaskId)
+    .then((res) => {
+      const t = res.data?.data ?? res.data;
+      // 任务仍在跑 → 重连 WS 恢复实时进度；已完成则只做静态恢复
+      if (t?.status === "running") taskStore.connectWebSocket(storedTaskId);
+    })
+    .catch(() => {});
+}
+
+// 会话切换（侧栏「方案」条目）→ 同步任务视图，避免跨会话串消息
+watch(
+  () => chatSession.activeSolutionId,
+  () => applySessionTask(chatSession.activeSolutionSession),
+);
 
 // task_end 后 taskStore.isRunning=false，同步 solution 的 runningMode
 watch(
@@ -597,22 +560,7 @@ onMounted(() => {
   }
   // 刷新恢复：task_id 持久化在 session 上 → 回放事件流重建动态时间线 + 交付物；
   // 任务仍在跑则重连 WS 恢复实时进度。
-  const sess = chatSession.activeSolutionSession;
-  const storedTaskId = sess?.taskId;
-  if (storedTaskId && !currentTaskId.value) {
-    currentTaskId.value = storedTaskId;
-    taskStore.setCurrentTask(storedTaskId);
-    taskStore.fetchTaskEvents(storedTaskId);
-    fetchTaskFiles(storedTaskId);
-    getTask(storedTaskId)
-      .then((res) => {
-        const t = res.data?.data ?? res.data;
-        if (t?.status === "running") {
-          taskStore.connectWebSocket(storedTaskId);
-        }
-      })
-      .catch(() => {});
-  }
+  applySessionTask(chatSession.activeSolutionSession);
 });
 
 // 注意：故意不在 onUnmounted 关闭 WS，避免切页导致任务进度丢失。

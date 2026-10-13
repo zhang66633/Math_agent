@@ -21,8 +21,10 @@ const props = withDefaults(
   defineProps<{
     message: Message;
     isLast?: boolean;
+    /** 折叠工具卡片里的图表（方案模式：图表在论文正文还会出现一次） */
+    foldToolImages?: boolean;
   }>(),
-  { isLast: false },
+  { isLast: false, foldToolImages: false },
 );
 
 const emit = defineEmits<{
@@ -71,6 +73,7 @@ const component = computed(() => {
     :is-last="isLast"
     :attached-tools="attachedTools"
     :segments="agentSegments"
+    :fold-tool-images="foldToolImages"
     @open-paper="emit('openPaper')"
     @retry="emit('retry')"
   />

@@ -15,6 +15,8 @@ const props = defineProps<{
   message: Message;
   /** 内联模式：嵌在 agent 气泡内，隐藏头像与时间戳、去除外边距 */
   inline?: boolean;
+  /** 折叠工具产物里的图表（方案模式：同一张图会在论文正文再出现一次） */
+  foldImages?: boolean;
 }>();
 
 const tool = computed(() => props.message as ToolMessage);
@@ -54,6 +56,7 @@ const timestamp = computed(() => {
           :output="toolOutput"
           :status="toolStatus"
           :duration-ms="tool.duration_ms"
+          :fold-images="foldImages"
           :error-text="typeof tool.error === 'string' ? tool.error : undefined"
         />
         <span v-if="timestamp && !inline" class="font-mono text-[10px] text-muted-foreground/50 mt-0.5">{{ timestamp }}</span>

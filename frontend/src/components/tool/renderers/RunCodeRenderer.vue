@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import ToolStatusBadge from "@/components/tool/ToolStatusBadge.vue";
 import type { ToolOutputEntry, ToolStatus } from "@/types/response";
+import { collectImageUrls } from "@/utils/toolOutput";
 import { ChevronRight, Code2 } from "lucide-vue-next";
 /**
  * 代码执行渲染器 — Python 语法高亮 + stdout + 图片 + 错误
@@ -10,13 +11,25 @@ import { ChevronRight, Code2 } from "lucide-vue-next";
  */
 import { computed, ref, watch } from "vue";
 
-const props = defineProps<{
-  input: Record<string, unknown> | null;
-  output: unknown[] | null;
-  status?: ToolStatus;
-  durationMs?: number;
-  errorText?: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    input: Record<string, unknown> | null;
+    output: unknown[] | null;
+    status?: ToolStatus;
+    durationMs?: number;
+    errorText?: string;
+    /**
+     * 把执行产物里的图表折叠起来（方案模式用）。
+     *
+     * 方案模式的图表会在论文正文里再出现一次（写作阶段按材料把
+     * `/api/task_files/{task_id}/xxx.png` 原样插进正文），第一次的
+     * 执行截图若常驻展开，同一张图在会话里就要占两屏——折叠后它退化成
+     * 一行可展开的标记，视觉上等于并入推理过程；要看原图时一点即开。
+     */
+    foldImages?: boolean;
+  }>(),
+  { foldImages: false },
+);
 
 const code = computed(() => {
   if (!props.input) return "";
@@ -79,17 +92,20 @@ const stdout = computed(() => {
   return m ? m[1].trim() : "";
 });
 
-const hasImages = computed(() => {
-  const codeOut = findCodeOut();
-  return Array.isArray(codeOut?.images) && (codeOut?.images.length ?? 0) > 0;
-});
-
+// 按 URL 去重：同一张图在一条 tool_result 里可能重复上报（stdout 打印 + 文件列表），
+// 不去重会渲染成两张一模一样的图
 const toolImages = computed<string[]>(() => {
   const codeOut = findCodeOut();
-  return codeOut?.images ?? [];
+  return collectImageUrls(codeOut ? [codeOut] : []);
 });
 
+const hasImages = computed(() => toolImages.value.length > 0);
+
 const isRunning = computed(() => props.status === "running");
+
+// 图表折叠态：方案模式下默认收起（正文里还会再显示一次），要在卡片里看时展开
+const imagesExpanded = ref(false);
+const showImages = computed(() => !props.foldImages || imagesExpanded.value);
 
 // 图片加载失败（404/临时目录被清理）时隐藏，避免破图占位行
 const failedImages = ref<Set<number>>(new Set());
@@ -146,16 +162,28 @@ function onImgError(i: number) {
         <pre class="whitespace-pre-wrap break-all">{{ stdout }}</pre>
       </div>
 
-      <!-- 图片（加载失败自动隐藏，不留破图占位） -->
+      <!-- 图片（加载失败自动隐藏，不留破图占位；方案模式默认折叠，正文里是图的正式位置） -->
       <div v-if="hasImages" class="space-y-2">
-        <template v-for="(src, i) in toolImages" :key="i">
-          <img
-            v-if="!failedImages.has(i)"
-            :src="src"
-            class="max-w-full rounded-md border border-border"
-            loading="lazy"
-            @error="onImgError(i)"
-          />
+        <button
+          v-if="foldImages"
+          type="button"
+          class="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+          :title="imagesExpanded ? '收起执行截图' : '展开这一轮的图表原图'"
+          @click="imagesExpanded = !imagesExpanded"
+        >
+          <ChevronRight class="h-3 w-3 transition-transform" :class="{ 'rotate-90': imagesExpanded }" />
+          <span>{{ imagesExpanded ? "收起图表" : `展开图表（${toolImages.length} 张）` }}</span>
+        </button>
+        <template v-if="showImages">
+          <template v-for="(src, i) in toolImages" :key="src">
+            <img
+              v-if="!failedImages.has(i)"
+              :src="src"
+              class="max-w-full rounded-md border border-border"
+              loading="lazy"
+              @error="onImgError(i)"
+            />
+          </template>
         </template>
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { useAuthStore } from "@/stores/auth";
 import { useChatSessionStore } from "@/stores/chatSession";
 import type { Message, ToolMessage } from "@/types/response";
+import { describeNodeEnd } from "@/utils/taskSummary";
 import { TaskWebSocket } from "@/utils/websocket";
 import { defineStore } from "pinia";
 import { computed, ref, watch } from "vue";
@@ -38,6 +39,15 @@ interface WsEventData {
   xlsx_files?: string[];
   csv_files?: string[];
   html_files?: string[];
+  /** node_end 事实字段：图表/数据表/导出文件计数与论文结构（供文案层翻译成人话） */
+  images_count?: number;
+  xlsx_count?: number;
+  csv_count?: number;
+  files_count?: number;
+  /** 论文结构统计（写作节点 output 里真实数出来的章节数与图表引用数） */
+  sections?: number;
+  figures?: number;
+  red_team?: string;
   final_response_preview?: string;
   final_response_length?: number;
   message?: string;
@@ -63,6 +73,10 @@ const STREAMING_NODES = new Set([
   "verification_agent",
   "data_preprocessing_agent",
 ]);
+
+// 不发完成气泡的节点：终态格式化节点没有独立产物，正文由 task_end 的
+// 论文消息承载。旧实现会给它生成一条空标题气泡（stage 为空 → 「输出 N 字」）。
+const SILENT_NODES = new Set(["format_response"]);
 
 function genId() {
   return `tmsg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -197,6 +211,25 @@ export const useTaskStore = defineStore("task", () => {
 
   function setCurrentTask(taskId: string) {
     currentTaskId.value = taskId;
+  }
+
+  /** 清空任务视图（切到没有关联任务的会话时用）。
+   *
+   * 刻意**不关闭 WS**：任务可能仍在后台跑，切回来要能接着看；
+   * 只把「当前视图」指向空，避免上一个任务的进度气泡混进新会话。
+   */
+  function clearTaskView() {
+    currentTaskId.value = null;
+    isRunning.value = false;
+    completed.value = false;
+    currentStep.value = "";
+    writingStage.value = null;
+    sectionsDone.value = 0;
+    planSteps.value = [];
+    planReasons.value = {};
+    planSkills.value = [];
+    nodeStates.value = {};
+    rollbackInfo.value = null;
   }
 
   function now() {
@@ -537,21 +570,30 @@ export const useTaskStore = defineStore("task", () => {
       const summary: string = (data.data?.summary ?? "").trim();
       const outputLength = data.data?.output_length ?? 0;
       const passed = data.data?.passed;
-      const imagesCount = data.data?.images_count ?? 0;
 
-      // 构建给用户看的摘要
-      let content = "";
-      if (passed !== undefined) {
-        content = passed ? "验证通过" : "验证不通过";
-      } else if (imagesCount > 0) {
-        content = `求解完成，输出 ${outputLength} 字，图表 ${imagesCount} 张`;
-      } else if (outputLength > 0) {
-        content = `输出 ${outputLength} 字`;
+      // 终态格式节点不产出内容（正文由紧随其后的论文消息承载），
+      // 旧实现给它发一条「输出 N 字」气泡——与论文卡片重复且无信息量
+      if (SILENT_NODES.has(node)) {
+        currentStep.value = stage || currentStep.value;
+        return;
       }
-      // 兜底：部分节点（如跳过分支）无输出字段 → 完成提示，避免空内容三点假气泡
-      if (!content) {
-        content = title ? `已完成：${title}` : "已完成";
-      }
+
+      // 文案：把事实字段（图表/章节/文件数/验证结论）翻译成人话。
+      // 严禁把「输出 N 字」当结果汇报——字符数是实现度量，不是用户要看的产物。
+      const content = describeNodeEnd({
+        stage,
+        title,
+        output_length: outputLength,
+        images_count: data.data?.images_count,
+        xlsx_count: data.data?.xlsx_count,
+        csv_count: data.data?.csv_count,
+        files_count: data.data?.files_count,
+        passed,
+        red_team: data.data?.red_team,
+        sections: data.data?.sections,
+        figures: data.data?.figures,
+        skipped: data.data?.skipped,
+      });
 
       appendMessage(taskId, {
         // 确定性 id：nodeend-{node}——回放/重连重复触发同一 node_end 时
@@ -752,6 +794,7 @@ export const useTaskStore = defineStore("task", () => {
     connectWebSocket,
     closeWebSocket,
     setCurrentTask,
+    clearTaskView,
     appendMessage,
     updateMessage,
     fetchTaskEvents,

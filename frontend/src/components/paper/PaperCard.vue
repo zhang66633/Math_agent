@@ -28,7 +28,15 @@ const abstract = computed(() => {
   return text.length > 200 ? `${text.slice(0, 200)}…` : text;
 });
 
-const wordCount = computed(() => props.markdown.length);
+/** 一级/二级章节数（"## " 开头，排除"摘要"这类无编号小节） */
+const sectionCount = computed(
+  () => (props.markdown.match(/^#{2,3}\s+\S/gm) ?? []).length,
+);
+
+/** 正文引用的图表数（Markdown 图片语法） */
+const figureCount = computed(
+  () => (props.markdown.match(/!\[[^\]]*\]\([^)]*\)/g) ?? []).length,
+);
 </script>
 
 <template>
@@ -51,9 +59,14 @@ const wordCount = computed(() => props.markdown.length);
     <!-- 元信息 + 按钮 -->
     <div class="flex items-center justify-between gap-2">
       <div class="flex items-center gap-3 text-[11px] text-muted-foreground">
-        <span class="flex items-center gap-1">
+        <!-- 只报读者会去数的东西（章节/图表），不报字符数 -->
+        <span v-if="sectionCount > 0" class="flex items-center gap-1">
           <FileText class="h-3 w-3" />
-          {{ wordCount.toLocaleString() }} 字
+          {{ sectionCount }} 章
+        </span>
+        <span v-if="figureCount > 0" class="flex items-center gap-1">
+          <BookOpen class="h-3 w-3" />
+          {{ figureCount }} 张图表
         </span>
         <span class="flex items-center gap-1">
           <Clock class="h-3 w-3" />

@@ -19,8 +19,15 @@ const props = withDefaults(
     attachedTools?: Message[];
     /** chat 模式：文本与工具按事件顺序交错的片段流（存在时优先按序渲染） */
     segments?: AgentSegment[];
+    /** 折叠内联工具卡片里的图表（方案模式；见 RunCodeRenderer.foldImages） */
+    foldToolImages?: boolean;
   }>(),
-  { isLast: false, attachedTools: () => [], segments: () => [] },
+  {
+    isLast: false,
+    attachedTools: () => [],
+    segments: () => [],
+    foldToolImages: false,
+  },
 );
 
 const emit = defineEmits<{
@@ -150,6 +157,7 @@ const timestamp = computed(() => {
               <BubbleTool
                 v-else-if="seg.kind === 'tool' && toolMap.get(seg.toolId)"
                 :message="toolMap.get(seg.toolId)!"
+                :fold-images="foldToolImages"
                 inline
               />
             </template>

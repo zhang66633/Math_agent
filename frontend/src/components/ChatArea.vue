@@ -62,6 +62,7 @@
           <Bubble
             :message="messages[item.index]"
             :is-last="item.index === messages.length - 1"
+            :fold-tool-images="foldToolImages"
             @open-paper="$emit('openPaper')"
             @retry="$emit('retry')"
           />
@@ -82,7 +83,7 @@
 
     <!-- 交付物条：本会话生成的图表缩略图（chat/方案模式统一集中查看） -->
     <div
-      v-if="artifactImages.length"
+      v-if="showArtifacts && artifactImages.length"
       class="px-4 sm:px-8 pb-2 shrink-0 bg-background"
     >
       <div class="flex items-center gap-2 overflow-x-auto py-1.5">
@@ -128,7 +129,8 @@ import ChatScrollButton from "@/components/chat/ChatScrollButton.vue";
 import ChatThinking from "@/components/chat/ChatThinking.vue";
 import ChatToolbar from "@/components/chat/ChatToolbar.vue";
 import { useTaskStore } from "@/stores/task";
-import type { Message, ToolOutputEntry } from "@/types/response";
+import type { Message } from "@/types/response";
+import { collectImageUrls } from "@/utils/toolOutput";
 import { useVirtualizer } from "@tanstack/vue-virtual";
 import {
   computed,
@@ -154,6 +156,10 @@ const props = withDefaults(
     cancelling?: boolean;
     /** 空状态快捷提问(点击走 send 事件)。默认 [] → 不渲染,chat/solution/practice 页不受影响 */
     quickActions?: { label: string; text: string }[];
+    /** 折叠气泡内工具卡片产出的图表（方案模式：图表在论文正文还会出现一次） */
+    foldToolImages?: boolean;
+    /** 底部交付物缩略图条。方案模式关掉：右栏已有同一批图表的缩略图网格 */
+    showArtifacts?: boolean;
   }>(),
   {
     isRunning: false,
@@ -166,6 +172,8 @@ const props = withDefaults(
     cancellable: false,
     cancelling: false,
     quickActions: () => [],
+    foldToolImages: false,
+    showArtifacts: true,
   },
 );
 
@@ -197,14 +205,8 @@ const artifactImages = computed<string[]>(() => {
   const urls: string[] = [];
   for (const m of props.messages) {
     if (m.msg_type !== "tool") continue;
-    const out = m.output; // msg_type === "tool" 已收窄为 ToolMessage（output: unknown[] | null）
-    if (!Array.isArray(out)) continue;
-    for (const o of out as ToolOutputEntry[]) {
-      if (Array.isArray(o?.images)) {
-        for (const u of o.images) {
-          if (typeof u === "string" && !urls.includes(u)) urls.push(u);
-        }
-      }
+    for (const u of collectImageUrls(m.output)) {
+      if (!urls.includes(u)) urls.push(u);
     }
   }
   return urls.slice(-12);

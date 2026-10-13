@@ -28,9 +28,10 @@ const abstract = computed(() => {
   return text.length > 200 ? `${text.slice(0, 200)}…` : text;
 });
 
-/** 一级/二级章节数（"## " 开头，排除"摘要"这类无编号小节） */
+/** 章数（只数二级标题 `## `；三级标题是小节，混进来会把结构报错——
+ *  实测一篇论文 `## × 9 + ### × 41`，相加会被写成"50 章"） */
 const sectionCount = computed(
-  () => (props.markdown.match(/^#{2,3}\s+\S/gm) ?? []).length,
+  () => (props.markdown.match(/^##\s+\S/gm) ?? []).length,
 );
 
 /** 正文引用的图表数（Markdown 图片语法） */

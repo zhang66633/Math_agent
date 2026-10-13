@@ -99,18 +99,24 @@ def test_strip_missing_image_refs_noop_when_all_resolve():
     assert cleaned == md
 
 
-def test_count_paper_structure_counts_sections_and_figures():
+def test_count_paper_structure_counts_chapters_not_subsections():
+    """章 = 二级标题数；三级标题是小节，不能混进来。
+
+    实测教训：E2E 任务 d20f5bee 的论文是 `## × 9 + ### × 41`，
+    按 `#{2,3}` 统计会报成「50 章」——错误的结构数字。
+    """
     md = "\n".join(
         [
-            "# 题目",
+            "# 题目（一级标题是题目本身，不计）",
             "## 一、问题重述",
-            "### 1.1 小节",
+            "### 1.1 小节（不计入章数）",
+            "### 1.2 小节",
             "## 二、模型建立",
             "![图1](/api/task_files/t/a.png)",
             "正文",
         ]
     )
-    assert count_paper_structure(md) == (3, 1)
+    assert count_paper_structure(md) == (2, 1)
     assert count_paper_structure("") == (0, 0)
 
 

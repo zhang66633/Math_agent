@@ -298,8 +298,9 @@ def data_preprocessing_agent_node(state: AgentState) -> dict:
             "images_count": len(all_images),
             "summary": final_output[:800],
             "title": "数据预处理",
-            "desc": f"EDA 报告 {len(final_output)} 字"
-            + (f"，图表 {len(all_images)} 张" if all_images else ""),
+            # 人读字段不写字符数（长度留在 output_length）
+            "desc": "EDA 报告已生成"
+            + (f" · 图表 {len(all_images)} 张" if all_images else ""),
         },
     )
 
@@ -314,8 +315,7 @@ def data_preprocessing_agent_node(state: AgentState) -> dict:
         "messages": [
             SystemMessage(
                 content=f"[预处理Agent] 第{idx + 1}步完成，"
-                f"图表 {len(all_images)} 张，"
-                f"输出 {len(final_output)} 字"
+                f"图表 {len(all_images)} 张"
             )
         ],
     }

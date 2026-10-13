@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import re
@@ -196,40 +195,24 @@ def _check_cancelled(task_id: str) -> None:
 
 
 def _save_working_memory(session_id: str, stage: str, output: str, extra: dict | None = None):
-    """保存阶段检查点 + 异步更新问题状态文档。
+    """保存阶段检查点（WorkingMemory.save_checkpoint 会连带刷新问题状态文档）。
 
-    检查点同步写入（保证断电不丢失），
-    整体重写异步执行（不阻塞工作流）。
+    历史教训：这里曾经分两步——检查点同步写、文档靠
+    `asyncio.get_event_loop().run_in_executor(...)` 异步触发 LLM 整体重写。
+    图节点跑在 langgraph 线程池 worker 里，那些线程没有运行中的事件循环，
+    get_event_loop() 恒抛 RuntimeError 被静默跳过 → 文档在生产环境从未更新过
+    （审计 2026-10-14 实证：所有真实任务的 problem_doc.md 都是初始模板），
+    而 get_problem_doc() 当时零调用方。现在文档改成确定性拼装（读检查点 JSON、
+    纯文件 IO、毫秒级），由 save_checkpoint 一并负责，同类 bug 不可能再出现。
     """
     try:
         from app.services.working_memory import WorkingMemory
 
-        wm = WorkingMemory(session_id)
-        wm.save_checkpoint(stage, output, extra)
+        WorkingMemory(session_id).save_checkpoint(stage, output, extra)
     except Exception as e:  # noqa: BLE001
         # 工作记忆不阻塞主流程，但记录失败便于排查
         logger.warning(
-            "工作记忆检查点保存失败 (session=%s, stage=%s): %s",
-            session_id,
-            stage,
-            e,
-        )
-        return
-
-    # LLM 重写放后台线程，不阻塞流水线；
-    # 当前线程无运行事件循环时跳过异步重写（检查点已保存，问题文档留待下次更新）
-    try:
-        loop = asyncio.get_event_loop()
-        loop.run_in_executor(None, wm.update_problem_doc, stage, output, None)
-    except RuntimeError:
-        logger.warning(
-            "当前线程无运行事件循环，跳过问题文档异步重写 (session=%s, stage=%s)",
-            session_id,
-            stage,
-        )
-    except Exception as e:  # noqa: BLE001
-        logger.warning(
-            "问题文档异步重写失败 (session=%s, stage=%s): %s",
+            "工作记忆保存失败 (session=%s, stage=%s): %s",
             session_id,
             stage,
             e,
@@ -342,15 +325,19 @@ def strip_missing_image_refs(markdown: str) -> tuple[str, list[str]]:
 
 
 def count_paper_structure(markdown: str) -> tuple[int, int]:
-    """统计论文正文结构：返回 (章节数, 图片引用数)。
+    """统计论文正文结构：返回 (章数, 图片引用数)。
 
     用于 node_end 事件给前端报「几章 / 几张图」——比「输出 4 万字」
     对读者有意义（字数在气泡里是噪音，已在前端文案层禁止）。
-    章节只数二级/三级标题（`## ` / `### `），一级标题是论文题目本身。
+
+    章只数**二级标题**（`## `）：三级标题是小节，混进来会把真实结构报错。
+    实测 E2E 任务 d20f5bee 的论文是 `## × 9 + ### × 41`，两者相加就成了
+    「50 章」——数字看着不难看，但是**错的**，而错的数字比没有数字更糟。
+    一级标题是论文题目本身，同样不计。
     """
     if not markdown:
         return 0, 0
-    sections = len(re.findall(r"^#{2,3}\s+\S", markdown, flags=re.MULTILINE))
+    sections = len(re.findall(r"^##\s+\S", markdown, flags=re.MULTILINE))
     figures = len(re.findall(r"!\[[^\]]*\]\([^)]*\)", markdown))
     return sections, figures
 

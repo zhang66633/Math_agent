@@ -99,7 +99,9 @@ def analysis_agent_node(state: AgentState) -> dict:
             "output_length": len(analysis_output),
             "summary": analysis_output[:800],
             "title": "问题分析",
-            "desc": f"深度分析问题结构，输出 {len(analysis_output)} 字",
+            # 人读字段不写字符数：长度留在 output_length（机器字段），
+            # 见 docs/solution-ux-audit-2026-10.md 的「实现度量 ≠ 产物」
+            "desc": "问题分析完成",
         },
     )
 
@@ -110,7 +112,7 @@ def analysis_agent_node(state: AgentState) -> dict:
         "analysis_output": analysis_output,
         "current_step_index": idx,
         "messages": [
-            SystemMessage(content=f"[分析Agent] 第{idx + 1}步完成，输出 {len(analysis_output)} 字")
+            SystemMessage(content=f"[分析Agent] 第{idx + 1}步完成")
         ],
     }
 

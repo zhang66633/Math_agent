@@ -378,7 +378,9 @@ def writing_agent_node(state: AgentState) -> dict:
         "writing_output": writing_output,
         "current_step_index": idx,
         "messages": [
-            SystemMessage(content=f"[写作Agent] 第{idx + 1}步完成，论文 {len(writing_output)} 字")
+            SystemMessage(
+                content=f"[写作Agent] 第{idx + 1}步完成，论文 {sections} 章"
+            )
         ],
     }
 

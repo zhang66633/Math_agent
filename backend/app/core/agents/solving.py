@@ -86,7 +86,8 @@ def solving_agent_node(state: AgentState) -> dict:
                 "images_count": 0,
                 "summary": final_output[:800],
                 "title": "求解计算",
-                "desc": f"输出 {len(final_output)} 字（教学模式）",
+                # 人读字段不写字符数（长度留在 output_length）
+                "desc": "教学模式：引导式讲解已输出",
             },
         )
         return {
@@ -431,8 +432,9 @@ def solving_agent_node(state: AgentState) -> dict:
             "csv_count": len(all_csv),
             "summary": final_output[:800],
             "title": "求解计算",
-            "desc": f"输出 {len(final_output)} 字"
-            + (f"，图表 {len(all_images)} 张" if all_images else ""),
+            # 人读字段只报产物：图表/表格数留在事实字段，字符数不进 desc
+            "desc": "求解与出图完成"
+            + (f" · 图表 {len(all_images)} 张" if all_images else ""),
         },
     )
 
@@ -449,8 +451,7 @@ def solving_agent_node(state: AgentState) -> dict:
         "messages": [
             SystemMessage(
                 content=f"[求解Agent] 第{idx + 1}步完成，"
-                f"图表 {len(all_images)} 张，"
-                f"输出 {len(final_output)} 字"
+                f"图表 {len(all_images)} 张"
             )
         ],
     }

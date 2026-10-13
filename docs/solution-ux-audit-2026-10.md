@@ -156,6 +156,7 @@ flowchart LR
 |------|------|
 | `core/node_helpers.py` | `resolve_task_media_path` + `strip_missing_image_refs` + `count_paper_structure`；URL 采集去重 |
 | `core/agents/writing.py` | 定稿前剥离缺失图片引用；node_end 下发 `sections`/`figures`/`dropped_image_refs`；desc 不再报"字数" |
+| `core/agents/analysis.py`、`modeling.py`、`solving.py`、`data_preprocessing.py` | 人读字段（`desc` / agent 交接 SystemMessage）统一去掉字符数：长度留在机器字段 `output_length`，文字只讲产物（"模型已建立" / "求解与出图完成 · 图表 4 张"）。字符数留在给 LLM 的工具结果截断提示里——那是对模型说的，不是给人看的 |
 | `api/tasks.py` | `_resolve_image_path` 委托共享解析；`_latest_task_file` 供 xlsx/csv/zip 导出取最新 |
 | `tools/interaction_tools.py` | 工具结果文本里的图/表/报告 URL 去重保序 |
 
@@ -176,7 +177,34 @@ flowchart LR
 
 ![方案模式右栏交付物](assets/ux-2026-10/solution-deliverables-after.png)
 
-### 4.2 自动化
+### 4.2 端到端实跑（重启后端 + 真实任务）
+
+后端用新代码重启后，通过 API 发了一个真实任务（`d20f5bee`，LP 生产计划 + 灵敏度分析，
+走完整的 分类→检索→计划→分析→建模→求解→验证→导出→写作 全链路，约 5 分钟）。
+
+| 检查项 | 结果 |
+|--------|------|
+| `tool_result.images` 是否还有重复 URL | **重复条目 0**（两次 run_code 各 2 张，全部唯一；修复前同类事件流是 `[x.png, x.png]`） |
+| `node_end.writing_agent` 事实字段 | `sections=9, figures=7, dropped_image_refs=[]`，`desc="论文 9 章 · 图表 7 张 · 红队修订完成"` |
+| 论文图片引用是否都存在 | 7 处引用、4 张去重图片，**缺失 0 处**（全部指到文件区真实文件） |
+| artifacts 登记 | 4 图 + 1 xlsx + 8 csv + 1 zip，分组所需的 `type/size` 都在 |
+
+**实跑纠正了我自己的一处度量错误**：首版 `count_paper_structure` 用 `#{2,3}` 统计，
+把这个 `## × 9 + ### × 41` 的论文报成 **"50 章"**——数字不难看，但是错的。
+已改为只数二级标题，`PaperCard` 同步；新增单测钉住
+（`test_count_paper_structure_counts_chapters_not_subsections`）。
+这也说明"端到端实跑"不是走过场：它抓到了单测与代码评审都不会发现的口径错误。
+
+**本次未触发破图闸门**：这一轮模型没有编造图片链接（`dropped_image_refs=[]`），
+所以闸门走的是"无事发生"分支；它真正的触发路径由单测覆盖
+（用 12df70f4 里那个真实存在过的伪造 URL 做端到端 DOCX 断言）。
+
+**新发现（留给写作提示词那条线）**：7 处引用只对应 4 张图，同一张图在论文里被引用了
+2–3 次。`prompts/writing.py` 已有"同一张图全文只引用一次"的软约束，但**并行分章**
+场景下仍然重复（各章拿到同一份全量材料）。右栏的"正文/过程"标注不受影响，
+但论文质量上值得再做一层确定性去重（例如定稿时对重复引用只保留首次出现的章节）。
+
+### 4.3 自动化
 
 - `pytest -q`：**255 passed**（含本次新增 8 条）；1 条
   `test_apikeys_ssrf.py::test_public_https_accepted` 失败，**不是本次改动引入**：

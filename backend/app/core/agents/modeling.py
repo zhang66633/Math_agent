@@ -110,7 +110,8 @@ def modeling_agent_node(state: AgentState) -> dict:
             "output_length": len(model_output),
             "summary": model_output[:800],
             "title": "模型构建",
-            "desc": f"建立数学模型，输出 {len(model_output)} 字",
+            # 人读字段不写字符数（长度留在 output_length）
+            "desc": "数学模型已建立",
         },
     )
 
@@ -123,7 +124,7 @@ def modeling_agent_node(state: AgentState) -> dict:
         # 消费回退标志：本次回退已在建模节点执行，后续走正常下一步（solving→verification）
         "rollback_target": None,
         "messages": [
-            SystemMessage(content=f"[建模Agent] 第{idx + 1}步完成，输出 {len(model_output)} 字")
+            SystemMessage(content=f"[建模Agent] 第{idx + 1}步完成")
         ],
     }
 

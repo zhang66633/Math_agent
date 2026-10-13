@@ -34,8 +34,17 @@ method_card:
     \vec{X}_3 = \vec{X}_\delta - \vec{A}_3 \cdot |\vec{C}_3 \cdot \vec{X}_\delta - \vec{X}|
 
     $$'
-  applicable_when: []
-  typical_scenarios: []
+  applicable_when:
+  - 目标函数可计算但不可导或梯度难以获取。
+  - 决策变量为连续实数，且可给出各维上下界。
+  - 问题维度中等至高维，存在多个局部最优，需要全局搜索。
+  - 允许一定数量的函数评估，且不需要严格数学最优性证明。
+  - 约束可通过边界处理或惩罚项融入目标函数。
+  typical_scenarios:
+  - 连续或近似连续的高维、多峰函数全局优化问题，且目标函数无梯度信息可用时。
+  - 工程参数调优、神经网络超参数搜索等需要快速获得可行近优解的场合。
+  - 约束条件较少或可通过惩罚函数转化为无约束的优化问题。
+  - 需要平衡全局探索与局部开发、且计算预算有限的群体智能优化任务。
   code_snippets:
   - language: python
     description: 灰狼优化算法 实现要点
@@ -75,3 +84,14 @@ method_card:
     - '**等级变化图**：个体等级的变化历史'
     source: math-modeling-skill
   id: mc_62
+  formulas:
+  - \vec{X}(t+1) = \frac{\vec{X}_1 + \vec{X}_2 + \vec{X}_3}{3}，其中 \vec{X}(t+1) 为下一代灰狼位置，\vec{X}_1,\vec{X}_2,\vec{X}_3
+    分别由 α、β、δ 狼引导计算。
+  - \vec{X}_1 = \vec{X}_\alpha - \vec{A}_1 \cdot |\vec{C}_1 \cdot \vec{X}_\alpha - \vec{X}|，\vec{X}_\alpha
+    为 α 狼位置，\vec{A}_1,\vec{C}_1 为系数向量。
+  - \vec{X}_2 = \vec{X}_\beta - \vec{A}_2 \cdot |\vec{C}_2 \cdot \vec{X}_\beta - \vec{X}|，\vec{X}_\beta
+    为 β 狼位置。
+  - \vec{X}_3 = \vec{X}_\delta - \vec{A}_3 \cdot |\vec{C}_3 \cdot \vec{X}_\delta - \vec{X}|，\vec{X}_\delta
+    为 δ 狼位置。
+  - \vec{A} = 2\vec{a} \cdot \vec{r}_1 - \vec{a},\quad \vec{C} = 2\vec{r}_2，其中 \vec{a} 从 2 线性递减到 0，\vec{r}_1,\vec{r}_2
+    为 [0,1] 随机向量。

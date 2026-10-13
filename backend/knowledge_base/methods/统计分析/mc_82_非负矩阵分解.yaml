@@ -109,8 +109,18 @@ method_card:
     | 基向量 | 稀疏 | 非稀疏 |
 
     | 适用数据 | 非负数据 | 任意数据 |'
-  applicable_when: []
-  typical_scenarios: []
+  applicable_when:
+  - 数据矩阵的所有元素均为非负值。
+  - 需要降维并提取具有可解释性的局部特征。
+  - 希望得到稀疏的基向量表示。
+  - 数据具有部分整体结构，适合用非负基向量线性组合表示。
+  - 对分解结果的物理意义有非负性要求。
+  typical_scenarios:
+  - 图像处理中用于人脸识别、图像特征提取和图像聚类等任务。
+  - 文本挖掘中用于主题发现、文档聚类和潜在语义分析。
+  - 推荐系统中用于用户-物品评分矩阵的分解与缺失值预测。
+  - 生物信息学中用于基因表达数据的模式识别和样本分类。
+  - 信号处理中用于盲源分离和音频信号分解。
   code_snippets:
   - language: python
     description: 非负矩阵分解 实现要点
@@ -155,3 +165,11 @@ method_card:
     - '**特征贡献图**：各基向量的贡献'
     source: math-modeling-skill
   id: mc_82
+  formulas:
+  - V \approx W H，其中 V \in \mathbb{R}^{n \times m} 为非负数据矩阵，W \in \mathbb{R}^{n \times r} 为基矩阵，H \in \mathbb{R}^{r
+    \times m} 为系数矩阵，r 为分解秩且 r < \min(n, m)。
+  - W_{ij} \geq 0, \quad H_{ij} \geq 0，非负约束条件。
+  - \|V - WH\|_F^2 = \sum_{i,j} (V_{ij} - (WH)_{ij})^2，Frobenius范数损失函数。
+  - D_{KL}(V \| WH) = \sum_{i,j} \left( V_{ij} \log\frac{V_{ij}}{(WH)_{ij}} - V_{ij} + (WH)_{ij} \right)，KL散度损失函数。
+  - H_{kj} \leftarrow H_{kj} \frac{(W^T V)_{kj}}{(W^T W H)_{kj} + \epsilon}, \quad W_{ik} \leftarrow W_{ik}
+    \frac{(V H^T)_{ik}}{(W H H^T)_{ik} + \epsilon}，乘法更新规则，\epsilon 为防止除零的小正数。

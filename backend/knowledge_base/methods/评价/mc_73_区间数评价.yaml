@@ -97,8 +97,18 @@ method_card:
     2. 计算可能度矩阵
 
     3. 计算排序向量'
-  applicable_when: []
-  typical_scenarios: []
+  applicable_when:
+  - 各方案在各指标上的取值可表示为区间数，且区间上下界已知。
+  - 指标有正向、负向之分，需要进行标准化处理以消除量纲影响。
+  - 需要保留评价结果的不确定性，以区间形式输出综合评价值。
+  - 指标权重已知或可确定，并能与区间数进行加权运算。
+  - 方案排序需基于区间距离和可能度进行比较。
+  typical_scenarios:
+  - 指标值只能给出上下界或波动范围时，用于多方案综合评价与排序。
+  - 专家打分存在不确定性，用区间数表示评分范围时，适合采用区间数评价。
+  - 监测数据受测量误差影响，指标值以区间形式给出时，可用该方法进行评价。
+  - 需要同时考虑乐观与悲观情形，得到方案评价结果区间时，适合使用区间数TOPSIS。
+  - 评价信息不完整但可确定取值区间时，可用区间数评价辅助决策排序。
   code_snippets:
   - language: python
     description: 区间数评价 实现要点
@@ -143,3 +153,11 @@ method_card:
     - '**敏感性分析图**：边界变化对排序影响'
     source: math-modeling-skill
   id: mc_73
+  formulas:
+  - 区间数：$\tilde{a} = [a^L, a^U]$，其中 $a^L \leq a^U$，$a^L$ 为下界，$a^U$ 为上界。
+  - 区间加法：$\tilde{a} + \tilde{b} = [a^L + b^L, a^U + b^U]$，用于合并区间信息。
+  - 正向指标标准化：$\tilde{r}_{ij} = \left[ \frac{a_{ij}^L}{\max_k a_{kj}^U}, \frac{a_{ij}^U}{\max_k a_{kj}^U}
+    \right]$，其中 $a_{ij}$ 为第 $i$ 个方案第 $j$ 个指标的区间值。
+  - 负向指标标准化：$\tilde{r}_{ij} = \left[ \frac{\min_k a_{kj}^L}{a_{ij}^U}, \frac{\min_k a_{kj}^U}{a_{ij}^L}
+    \right]$，用于成本型指标。
+  - 区间距离：$D(\tilde{a}, \tilde{b}) = \sqrt{(a^L - b^L)^2 + (a^U - b^U)^2}$，用于计算与正负理想解的距离。

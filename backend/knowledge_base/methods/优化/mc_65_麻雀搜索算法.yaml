@@ -58,8 +58,18 @@ method_card:
     - $\alpha$：[0, 1]随机数
 
     - $R_2$：预警值，[0, 1]随机数'
-  applicable_when: []
-  typical_scenarios: []
+  applicable_when:
+  - 目标函数为黑箱函数，无法获得解析梯度或导数信息。
+  - 问题维度较高，传统梯度方法易陷入局部最优或计算代价过大。
+  - 搜索空间有明确上下界约束，变量为连续或可编码为连续值。
+  - 允许一定随机性，且可接受多次独立运行取最优结果。
+  - 优化问题对收敛速度有一定要求，但不需要严格理论最优性证明。
+  typical_scenarios:
+  - 连续或离散变量的全局优化问题，目标函数不可导或梯度信息难以获取时使用。
+  - 高维参数寻优问题，如机器学习超参数调优、神经网络权重初始化搜索。
+  - 工程优化设计问题，如结构参数优化、路径规划、调度问题。
+  - 需要快速收敛且计算资源有限的场景，如实时优化或嵌入式系统参数整定。
+  - 多峰函数优化问题，需要跳出局部最优寻找全局最优解。
   code_snippets:
   - language: python
     description: 麻雀搜索算法 实现要点
@@ -99,3 +109,14 @@ method_card:
     - '**警戒值变化图**：安全阈值影响分析'
     source: math-modeling-skill
   id: mc_65
+  formulas:
+  - 发现者位置更新：$$X_{i,j}^{t+1} = \begin{cases} X_{i,j}^t \cdot \exp(-\frac{i}{\alpha \cdot iter_{max}}), &
+    R_2 < ST \\ X_{i,j}^t + Q \cdot L, & R_2 \geq ST \end{cases}$$ 其中 $X_{i,j}^t$ 为第 $i$ 只麻雀第 $j$ 维在第 $t$
+    代的位置，$\alpha$ 为 [0,1] 随机数，$iter_{max}$ 为最大迭代次数，$Q$ 为服从正态分布的随机数，$L$ 为单位向量，$R_2$ 为预警值，$ST$ 为安全阈值。
+  - 跟随者位置更新：$$X_{i,j}^{t+1} = \begin{cases} Q \cdot \exp(\frac{X_{worst} - X_{i,j}^t}{i^2}), & i > n/2 \\
+    X_{p}^{t+1} + |X_{i,j}^t - X_{p}^{t+1}| \cdot A^+ \cdot L, & \text{otherwise} \end{cases}$$ 其中 $X_{worst}$
+    为当前最差位置，$X_{p}^{t+1}$ 为当前最优发现者位置，$n$ 为麻雀总数，$A^+$ 为 $A^T(AA^T)^{-1}$，$A$ 为元素随机取 1 或 -1 的向量。
+  - 预警者位置更新：$$X_{i,j}^{t+1} = \begin{cases} X_{best}^t + \beta \cdot |X_{i,j}^t - X_{best}^t|, & f_i > f_g
+    \\ X_{i,j}^t + K \cdot \frac{|X_{i,j}^t - X_{worst}^t|}{f_i - f_w + \epsilon}, & f_i = f_g \end{cases}$$
+    其中 $X_{best}^t$ 为当前全局最优位置，$\beta$ 为步长控制参数，$K$ 为 [-1,1] 随机数，$f_i$ 为当前适应度，$f_g$ 为全局最优适应度，$f_w$ 为全局最差适应度，$\epsilon$
+    为防止分母为零的小常数。

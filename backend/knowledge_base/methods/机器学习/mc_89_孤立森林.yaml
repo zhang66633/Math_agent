@@ -110,8 +110,18 @@ method_card:
     | 不适合密集簇数据 | 正常点也聚集时误报多 | 正常点聚集时考虑 LOF/密度方法 |
 
     | 异常标签语义 | predict 返回 1/-1，score_samples 越大越异常 | 转 0/1 统一口径 |'
-  applicable_when: []
-  typical_scenarios: []
+  applicable_when:
+  - 数据中异常点数量远少于正常点，且异常点与正常点差异明显
+  - 无需假设数据服从特定分布，适合非高斯或未知分布数据
+  - 数据维度较高但异常点仍可被随机分割隔离
+  - 样本量较大，需要线性时间复杂度或内存效率较高的方法
+  - 正常点不呈现密集簇状分布，异常点相对孤立
+  typical_scenarios:
+  - 网络入侵检测中识别少量异常流量
+  - 金融交易中检测欺诈或异常交易行为
+  - 工业设备监控中识别异常运行状态
+  - 高维数据中快速筛选离群点
+  - 无标签数据中探索潜在异常样本
   code_snippets:
   - language: python
     description: 孤立森林 实现要点
@@ -155,3 +165,8 @@ method_card:
     - '**2D投影图**：二维特征空间的异常点'
     source: math-modeling-skill
   id: mc_89
+  formulas:
+  - 路径长度：h(x) = \sum_{i=1}^{\text{path}} \Delta i + C(\psi)，其中 \Delta i 为节点到子节点的路径长度，C(\psi) 为调整项，\psi 为样本数
+  - 调整路径长度：c(\psi) = 2H(\psi - 1) - (2(\psi - 1)/\psi)，其中 H(i) 为调和数，\psi 为样本数
+  - 归一化路径长度：H(x) = h(x) / c(\psi)，其中 h(x) 为路径长度，c(\psi) 为调整路径长度
+  - 异常得分：s(x, \psi) = 2^{-\frac{E[H(x)]}{c(\psi)}}，其中 E[H(x)] 为归一化路径长度的期望，c(\psi) 为调整路径长度

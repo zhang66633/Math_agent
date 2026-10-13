@@ -124,8 +124,18 @@ method_card:
 
 
     自由度：$df = (p - k + 1)(q - k + 1)$'
-  applicable_when: []
-  typical_scenarios: []
+  applicable_when:
+  - 两组变量均为连续型数值变量，且样本量足够大。
+  - 两组变量内部存在一定相关性，但研究者关注的是两组变量之间的整体关联。
+  - 变量间关系近似线性，或可通过线性组合有效捕捉主要关联。
+  - 协方差矩阵可逆或近似可逆，避免奇异导致求解不稳定。
+  - 样本量 n 大于变量总数 p+q，以保证统计推断的有效性。
+  typical_scenarios:
+  - 研究两组多变量数据之间的整体相关性，例如一组心理指标与一组生理指标的关系。
+  - 分析两个变量集合之间的线性关联，如学生成绩组与学习行为组之间的关联。
+  - 在降维与特征提取中，寻找两组变量中相关性最高的线性组合。
+  - 用于跨模态数据分析，如图像特征与文本特征之间的相关性建模。
+  - 在社会科学、生物医学等领域中，当需要同时考虑多个自变量与多个因变量的关联时。
   code_snippets:
   - language: python
     description: 典型相关分析 实现要点
@@ -170,3 +180,10 @@ method_card:
     - '**显著性检验图**：各对典型变量的显著性'
     source: math-modeling-skill
   id: mc_81
+  formulas:
+  - \rho = \frac{a^T \Sigma_{XY} b}{\sqrt{a^T \Sigma_{XX} a \cdot b^T \Sigma_{YY} b}}，其中 \Sigma_{XX}, \Sigma_{YY},
+    \Sigma_{XY} 分别为 X 和 Y 的协方差矩阵及互协方差矩阵，a, b 为典型权重向量。
+  - \max_{a,b} a^T \Sigma_{XY} b \quad \text{s.t. } a^T \Sigma_{XX} a = 1, \; b^T \Sigma_{YY} b = 1，表示在单位方差约束下最大化两组线性组合的协方差。
+  - \Sigma_{XY} \Sigma_{YY}^{-1} \Sigma_{YX} a = \lambda^2 \Sigma_{XX} a，为求解典型权重 a 的特征值问题，\lambda^2 为典型相关系数的平方。
+  - \Sigma_{YX} \Sigma_{XX}^{-1} \Sigma_{XY} b = \lambda^2 \Sigma_{YY} b，为求解典型权重 b 的特征值问题。
+  - \Lambda = \prod_{i=k}^{m} (1 - \lambda_i^2)，Wilks' Lambda 统计量，用于检验第 k 对及之后典型变量的显著性，m = \min(p, q)。

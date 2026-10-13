@@ -45,7 +45,28 @@ method_card:
     solution: 对非正则内点需利用边界条件进行特殊处理，如直接转移法或线性插值法，不能简单套用正则内点的差分方程。
   - mistake: 在边界条件离散化时，对第二、三类边界条件使用不恰当的差商近似导致精度降低
     solution: 根据精度需求选择合适的差商近似：可用向前/向后差商（一阶精度）或中心差商（二阶精度）近似边界上的偏导数。
-  code_snippets: []
+  code_snippets:
+  - language: python
+    description: 一维热传导方程向前差分（FTCS）显式格式求解，对应该卡「一维热传导方程向前差分格式」公式
+    code: |
+      import numpy as np
+
+      # 求解 u_t = a^2 * u_xx，x∈[0,L]，给定初始条件与 Dirichlet 边界
+      L, T = 1.0, 0.2
+      N, M = 50, 500            # 空间步数 / 时间步数
+      a = 0.1                   # 热扩散系数
+      h = L / N
+      tau = T / M
+      r = a**2 * tau / h**2     # 稳定性要求 r <= 0.5，否则显式格式发散
+
+      x = np.linspace(0, L, N + 1)
+      u = np.sin(np.pi * x)     # 初始条件
+      u[0] = u[-1] = 0.0        # 边界条件
+
+      for _ in range(M):
+          # u[k,j+1] = u[k,j] + r*(u[k+1,j] - 2*u[k,j] + u[k-1,j])
+          u[1:-1] = u[1:-1] + r * (u[2:] - 2 * u[1:-1] + u[:-2])
+          u[0] = u[-1] = 0.0
   related_cards: []
   related_papers: []
   difficulty: 4

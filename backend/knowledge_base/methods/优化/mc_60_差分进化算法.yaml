@@ -21,8 +21,18 @@ method_card:
     - $F$：缩放因子（0.4-1.0）
 
     - $CR$：交叉概率（0.1-0.9）'
-  applicable_when: []
-  typical_scenarios: []
+  applicable_when:
+  - 问题变量为连续实数，且每个变量有明确的上下界约束。
+  - 目标函数为黑箱函数，无法或难以求导，但可以计算函数值。
+  - 问题可能存在多个局部最优，需要全局搜索能力较强的算法。
+  - 对算法实现复杂度要求较低，希望用较少参数控制搜索过程。
+  - 允许一定数量的目标函数评估，且不需要严格的收敛性证明。
+  typical_scenarios:
+  - 连续变量、多峰、非凸的全局优化问题，且目标函数不可导或梯度信息难以获取时使用。
+  - 目标函数计算代价较高、需要较少迭代次数获得可接受解时使用。
+  - 参数空间维度中等（如几维到几十维）且变量有明确上下界约束时使用。
+  - 需要简单、易于实现且鲁棒性强的进化优化方法时使用。
+  - 作为基准或对比算法，用于验证其他优化算法在连续优化问题上的性能时使用。
   code_snippets:
   - language: python
     description: 差分进化算法 实现要点
@@ -44,3 +54,10 @@ method_card:
     - '**参数敏感性图**：参数F和CR的影响'
     source: math-modeling-skill
   id: mc_60
+  formulas:
+  - 变异：$V_i = X_{r1} + F \cdot (X_{r2} - X_{r3})$，其中 $X_{r1}, X_{r2}, X_{r3}$ 为种群中随机选取的三个不同个体，$F$ 为缩放因子，$V_i$
+    为变异个体。
+  - 交叉：$U_{ij} = \begin{cases} V_{ij}, & \text{rand} \leq CR \text{ or } j = j_{rand} \\ X_{ij}, & \text{otherwise}
+    \end{cases}$，其中 $U_{ij}$ 为试验个体第 $j$ 维分量，$CR$ 为交叉概率，$j_{rand}$ 为随机选定的维度索引。
+  - 选择：$X_i^{new} = \begin{cases} U_i, & f(U_i) \leq f(X_i) \\ X_i, & \text{otherwise} \end{cases}$，其中 $f$
+    为目标函数，$X_i^{new}$ 为下一代个体。

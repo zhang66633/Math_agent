@@ -17,8 +17,18 @@ method_card:
     \ - \\hat{X}_{n,t+h})^2}\n$$\n\n**MAE**（平均绝对误差）：\n$$\nMAE = \\frac{1}{NTH} \\sum_{n,t,h} |X_{n,t+h}\
     \ - \\hat{X}_{n,t+h}|\n$$\n\n**MAPE**（平均绝对百分比误差）：\n$$\nMAPE = \\frac{100\\%}{NTH} \\sum_{n,t,h} \\\
     left|\\frac{X_{n,t+h} - \\hat{X}_{n,t+h}}{X_{n,t+h}}\\right|\n$$"
-  applicable_when: []
-  typical_scenarios: []
+  applicable_when:
+  - 数据可表示为空间节点×时间步长×特征维度的三维张量 X ∈ R^{N×T×F}。
+  - 空间节点之间存在可定义的邻接或相似关系，可构建图 G=(V,E,W)。
+  - 时间序列存在自相关，当前状态受历史状态影响。
+  - 空间上当前位置受邻近位置影响，存在空间依赖或时空交互。
+  - 预测目标为未来若干时间步的节点状态，且可用 RMSE、MAE、MAPE 等指标评价。
+  typical_scenarios:
+  - 交通流量预测：需要同时利用道路网络空间邻接关系与历史流量时间序列进行短时或长时预测时使用。
+  - 空气质量预测：监测站点之间存在空间相关性，且污染物浓度具有时间依赖时使用。
+  - 疫情传播预测：区域间人员流动构成空间依赖，感染人数随时间演化时使用。
+  - 路网速度/拥堵预测：需要基于图结构建模节点间影响并输出未来多步预测时使用。
+  - 传感器网络时空序列预测：多个空间节点同步采集时间序列且节点间存在关联时使用。
   code_snippets:
   - language: python
     description: 时空预测模型 实现要点
@@ -62,3 +72,12 @@ method_card:
     - '**误差空间分布**：预测误差的空间分布'
     source: math-modeling-skill
   id: mc_69
+  formulas:
+  - X \in \mathbb{R}^{N \times T \times F}：时空数据表示，N 为空间节点数，T 为时间步长，F 为特征维度。
+  - X_t = \sum_{k=1}^{p} \Phi_k X_{t-k} + \sum_{l=1}^{q} \Theta_l \epsilon_{t-l} + \epsilon_t：STARIMA 时空扩展，\Phi_k
+    为自回归系数，\Theta_l 为移动平均系数，\epsilon_t 为误差项。
+  - H^{(l+1)} = \sigma(\tilde{D}^{-\frac{1}{2}}\tilde{A}\tilde{D}^{-\frac{1}{2}} H^{(l)} W^{(l)})：图卷积层，\tilde{A}=A+I
+    为加入自连接的邻接矩阵，\tilde{D}_{ii}=\sum_j \tilde{A}_{ij} 为度矩阵，W^{(l)} 为可学习权重，\sigma 为激活函数。
+  - \alpha_{ij}^t = \frac{\exp(score(s_i^t, s_j^t))}{\sum_{k \in \mathcal{N}(i)} \exp(score(s_i^t, s_k^t))}：时空注意力权重，s_i^t
+    为节点 i 在时刻 t 的状态表示，\mathcal{N}(i) 为节点 i 的邻居集合。
+  - \hat{X}_{t+1:t+H} = \text{Decoder}(\text{Encoder}(X_{t-T:t}, G))：预测输出，X_{t-T:t} 为历史输入序列，G 为空间图，H 为预测步长。

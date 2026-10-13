@@ -92,8 +92,18 @@ method_card:
     \min \sum_{(u,v) \in E} f(u, v) \cdot cost(u, v)
 
     $$'
-  applicable_when: []
-  typical_scenarios: []
+  applicable_when:
+  - 问题可以抽象为有向图，且每条边有明确的容量限制。
+  - 存在一个明确的源点和一个明确的汇点，流从源点出发最终到达汇点。
+  - 除源点和汇点外，所有中间节点满足流量守恒，即流入量等于流出量。
+  - 每条边的实际流量非负且不超过该边的容量。
+  - 若涉及费用，则每条边除容量外还给出单位流量的费用。
+  typical_scenarios:
+  - 交通运输网络中，需要计算从出发地到目的地能够通过的最大车流量或货物运输量。
+  - 通信网络中，需要确定从源节点到目的节点能够传输的最大数据带宽。
+  - 管道输送系统中，需要计算从供应站到需求站的最大流体输送量。
+  - 任务分配问题中，需要将任务分配给执行者并使完成的任务数量最大。
+  - 在最大流基础上考虑运输成本时，需要求解总费用最小的流方案。
   code_snippets:
   - language: python
     description: 网络流问题 实现要点
@@ -138,3 +148,10 @@ method_card:
     - '**瓶颈分析图**：瓶颈边识别'
     source: math-modeling-skill
   id: mc_75
+  formulas:
+  - 流量守恒：$$\sum_{v} f(v, u) = \sum_{v} f(u, v), \quad \forall u \neq s, t$$ 其中 $f(u,v)$ 表示边 $(u,v)$ 上的流量，$s$
+    为源点，$t$ 为汇点。
+  - 容量限制：$$0 \leq f(u, v) \leq c(u, v)$$ 其中 $c(u,v)$ 表示边 $(u,v)$ 的容量。
+  - 残差容量：$$c_f(u, v) = \begin{cases} c(u, v) - f(u, v), & (u, v) \in E \\ f(v, u), & (v, u) \in E \\ 0,
+    & \text{否则} \end{cases}$$ 其中 $c_f(u,v)$ 表示残差网络中边 $(u,v)$ 的剩余容量。
+  - 最小费用最大流目标：$$\min \sum_{(u,v) \in E} f(u, v) \cdot cost(u, v)$$ 其中 $cost(u,v)$ 表示边 $(u,v)$ 上单位流量的费用。

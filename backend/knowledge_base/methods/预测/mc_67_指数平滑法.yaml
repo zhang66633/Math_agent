@@ -53,8 +53,18 @@ method_card:
 
 
     **预测**：$F_{t+m} = (L_t + m T_t) S_{t-s+m}$'
-  applicable_when: []
-  typical_scenarios: []
+  applicable_when:
+  - 时间序列数据按等间隔时间点观测，且观测值可视为数值型序列。
+  - 预测目标主要依赖历史观测的加权平均，近期数据比远期数据更重要。
+  - 简单指数平滑要求数据无趋势、无季节性；Holt法要求无季节性但有趋势；Holt-Winters要求同时有趋势和季节性。
+  - 季节性周期长度s已知且相对稳定，例如月度数据s=12、季度数据s=4。
+  - 平滑系数α、β、γ可在(0,1)范围内选取或优化，用于控制水平、趋势、季节成分的更新速度。
+  typical_scenarios:
+  - 数据无明显趋势和季节性，只需对短期水平进行平稳预测时，使用简单指数平滑。
+  - 数据存在线性趋势但无季节性，需要预测未来若干期的趋势延续时，使用Holt线性趋势法。
+  - 数据同时存在趋势和固定周期季节性，需要预测未来季节周期内的取值时，使用Holt-Winters季节性方法。
+  - 需要对近期变化更敏感、对远期历史逐渐衰减权重的时序预测任务。
+  - 作为短期至中期时间序列预测的基线方法，在数据量有限或模型解释性要求较高时使用。
   code_snippets:
   - language: python
     description: 指数平滑法 实现要点
@@ -80,3 +90,10 @@ method_card:
     - '**误差分析图**：预测误差分析'
     source: math-modeling-skill
   id: mc_67
+  formulas:
+  - 简单指数平滑：$F_{t+1} = \alpha y_t + (1 - \alpha) F_t$，其中$y_t$为t时刻观测值，$F_t$为t时刻预测值，$\alpha \in (0,1)$为平滑系数。
+  - Holt水平方程：$L_t = \alpha y_t + (1 - \alpha)(L_{t-1} + T_{t-1})$，其中$L_t$为t时刻水平，$T_t$为t时刻趋势，$\alpha$为水平平滑系数。
+  - Holt趋势方程：$T_t = \beta(L_t - L_{t-1}) + (1 - \beta)T_{t-1}$，其中$\beta \in (0,1)$为趋势平滑系数。
+  - Holt预测：$F_{t+m} = L_t + m T_t$，其中$m$为向前预测步数。
+  - Holt-Winters季节方程：$S_t = \gamma \frac{y_t}{L_t} + (1 - \gamma)S_{t-s}$，预测：$F_{t+m} = (L_t + m T_t) S_{t-s+m}$，其中$S_t$为季节成分，$s$为季节周期长度，$\gamma
+    \in (0,1)$为季节平滑系数。

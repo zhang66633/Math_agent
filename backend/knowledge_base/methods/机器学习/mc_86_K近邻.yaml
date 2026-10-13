@@ -76,8 +76,17 @@ method_card:
     | 异常检测 | 距离异常点 | 无标签可用 |
 
     | 缺失值填充 | 用近邻均值填充 | 05 §1.1 |'
-  applicable_when: []
-  typical_scenarios: []
+  applicable_when:
+  - 数据已完成特征缩放（如 StandardScaler/MinMaxScaler），避免量纲差异主导距离。
+  - 样本规模为中小规模，预测耗时 O(n) 可接受。
+  - 特征维度不高，或已通过 PCA 等降维缓解维度灾难。
+  - 类别分布相对均衡，或已采用加权投票/过采样处理不平衡。
+  - 特征已做选择，去除了无关特征对距离的污染。
+  typical_scenarios:
+  - 样本量中小规模、特征维度不高时，用 KNN 做分类预测（如品种识别、相似匹配）。
+  - 目标为连续变量且样本间相似性有实际意义时，用 KNN 做回归估值。
+  - 无标签数据中需要基于距离识别异常点时，可用 KNN 的距离异常检测。
+  - 数据存在缺失值时，可用近邻均值对缺失值进行填充。
   code_snippets:
   - language: python
     description: K近邻 实现要点
@@ -119,3 +128,10 @@ method_card:
     - '**最近邻连线图**：二维下样本与近邻连线'
     source: math-modeling-skill
   id: mc_86
+  formulas:
+  - 闵可夫斯基距离：$d(x, y) = \left( \sum_{j=1}^{m} |x_j - y_j|^p \right)^{1/p}$，其中 $x,y$ 为样本向量，$m$ 为特征维数，$p$ 为距离阶数（$p=2$
+    时为欧氏距离）。
+  - 分类决策（多数投票）：$\hat{y}(x) = \arg\max_{c} \sum_{i \in N_K(x)} \mathbb{I}(y_i = c)$，其中 $N_K(x)$ 为 $x$ 的 K
+    个最近邻集合，$\mathbb{I}(\cdot)$ 为指示函数，$c$ 为类别。
+  - 回归决策（均值）：$\hat{y}(x) = \frac{1}{K} \sum_{i \in N_K(x)} y_i$，其中 $K$ 为近邻数，$y_i$ 为近邻样本的目标值。
+  - 加权投票（可选）：$w_i = 1/d(x, x_i)$，距离越近权重越大，用于分类或回归中加权聚合近邻结果。

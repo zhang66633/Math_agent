@@ -19,8 +19,18 @@ method_card:
     5. **亲和突变**：克隆抗体高频变异
 
     6. **免疫抑制**：相似抗体相互抑制'
-  applicable_when: []
-  typical_scenarios: []
+  applicable_when:
+  - 问题可表示为最小化或最大化一个标量目标函数，且候选解可编码为实数向量。
+  - 解空间具有多峰性或多样性需求，单一精英选择容易陷入局部最优。
+  - 目标函数可计算亲和度，但梯度信息不可用或不适合使用。
+  - 需要平衡全局探索与局部开发，可通过克隆选择和亲和突变实现。
+  - 种群中相似抗体需要被抑制，以维持多样性并防止过早收敛。
+  typical_scenarios:
+  - 目标函数存在多个局部最优、需要维持种群多样性以避免早熟的连续优化问题。
+  - 需要同时利用亲和度评价与抗体间抑制关系进行多峰函数寻优的场景。
+  - 候选解可通过克隆扩增与高频变异进行局部精细搜索的工程优化问题。
+  - 需要模拟免疫记忆机制、在动态或重复出现的优化任务中复用优质解的场景。
+  - 约束或黑箱目标下，仅能通过目标函数值评估候选解质量的优化问题。
   code_snippets:
   - language: python
     description: 免疫算法 实现要点
@@ -57,3 +67,10 @@ method_card:
     - '**多样性曲线**：种群多样性变化'
     source: math-modeling-skill
   id: mc_63
+  formulas:
+  - '亲和度（抗体-抗原）: $Aff(ab_i) = \frac{1}{1 + f(ab_i)}$，其中 $ab_i$ 为第 $i$ 个抗体，$f(ab_i)$ 为目标函数值（最小化问题）。'
+  - '抗体间相似度: $S(ab_i, ab_j) = \frac{1}{1 + \|ab_i - ab_j\|_2}$，其中 $\|\cdot\|_2$ 为欧氏距离。'
+  - '克隆数量: $N_c(ab_i) = \left\lfloor n_c \cdot \frac{Aff(ab_i)}{\sum_{j=1}^{N} Aff(ab_j)} \right\rfloor$，其中
+    $n_c$ 为克隆倍数，$N$ 为抗体总数。'
+  - '亲和突变: $ab_i'' = ab_i + \sigma \cdot \mathcal{N}(0, I)$，其中 $\sigma$ 为变异强度，$\mathcal{N}(0, I)$ 为标准高斯扰动。'
+  - '免疫抑制: $Aff''(ab_i) = Aff(ab_i) \cdot \exp\left(-\sum_{j \neq i} S(ab_i, ab_j)\right)$，用于降低相似抗体的有效亲和度。'

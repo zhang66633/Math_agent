@@ -94,8 +94,18 @@ method_card:
     | 概率输出 | 风险评分、置信度排序 | 需要 P(y=1\|x) |
 
     | 可解释分类 | 需要系数解读 | 特征影响明确 |'
-  applicable_when: []
-  typical_scenarios: []
+  applicable_when:
+  - 因变量为二分类或多分类类别标签，而非连续数值。
+  - 特征与对数几率之间近似满足线性关系，或经变换后近似线性。
+  - 特征尺度差异较大时，先做标准化以加速梯度下降收敛。
+  - 特征间存在强共线性时，需删除相关特征或加入 L2 正则。
+  - 类别严重不平衡时，需设置 class_weight='balanced' 或采用过采样。
+  typical_scenarios:
+  - 需要快速建立二分类基线模型时，如信用违约、疾病患病、点击转化预测。
+  - 需要输出样本属于正类的概率用于风险评分或置信度排序时。
+  - 需要模型系数可解释、能说明特征对对数几率影响方向与大小时。
+  - 多分类问题中可用一对多或 Softmax 回归直接输出各类概率时。
+  - 特征维度较高但样本量有限，需借助 L1/L2 正则控制过拟合时。
   code_snippets:
   - language: python
     description: 逻辑回归 实现要点
@@ -137,3 +147,10 @@ method_card:
     - '**校准曲线**：预测概率 vs 实际频率'
     source: math-modeling-skill
   id: mc_85
+  formulas:
+  - 线性组合：$z = w^T x + b$，其中 $w$ 为权重向量，$x$ 为特征向量，$b$ 为偏置。
+  - sigmoid 函数：$\sigma(z) = \frac{1}{1 + e^{-z}}$，将实数映射到 $(0,1)$。
+  - 分类概率：$P(y=1|x) = \sigma(w^T x + b) = \frac{1}{1 + e^{-(w^T x + b)}}$。
+  - 单样本损失：$L = -[y \log \hat{p} + (1-y) \log(1-\hat{p})]$，其中 $\hat{p}=P(y=1|x)$。
+  - L2 正则化目标：$J(w) = -\frac{1}{n}\sum_{i=1}^{n}[ y_i \log \hat{p}_i + (1-y_i) \log(1-\hat{p}_i) ] + \frac{\lambda}{2}\|w\|^2$，$\lambda$
+    为正则强度。

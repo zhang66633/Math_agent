@@ -17,8 +17,18 @@ method_card:
     \ | 可试 depth=2-3 平衡偏差/方差 |\n| 类别不平衡 | 提升法对不平衡敏感 | 用 `sample_weight` 或换 BalancedRandomForest |\n| 性能提升有限\
     \ | 数据已较易分类时收益小 | 对比随机森林/XGBoost（02 §9）再选 |\n| 与 XGBoost 关系 | AdaBoost 是梯度提升的特例 | 追求更强效果用 XGBoost，见\
     \ 02 §9 |"
-  applicable_when: []
-  typical_scenarios: []
+  applicable_when:
+  - 样本标签为二分类（或可通过变体扩展到多分类/回归）。
+  - 弱分类器（如深度为1的决策树桩）能够以略高于随机猜测的准确率完成分类。
+  - 训练数据噪声和异常值较少，或已进行数据清洗。
+  - 类别分布相对均衡，或已通过sample_weight等方式处理不平衡。
+  - 问题规模适中，迭代轮数T可控，且计算资源允许串行训练多个弱分类器。
+  typical_scenarios:
+  - 二分类任务中，需要一个比单一弱分类器（如决策树桩）更强的集成模型时使用。
+  - 数据特征维度较高但样本量中等，且弱分类器容易欠拟合时使用。
+  - 需要模型具有较好的可解释性（通过弱分类器加权组合）时使用。
+  - 作为基准模型，与随机森林、XGBoost等更复杂集成方法对比时使用。
+  - 多分类或回归任务中，可选用AdaBoost.M2或AdaBoost.R2变体。
   code_snippets:
   - language: python
     description: AdaBoost 实现要点
@@ -62,3 +72,10 @@ method_card:
     - '**残差图**：残差随轮数变化（回归）'
     source: math-modeling-skill
   id: mc_88
+  formulas:
+  - 样本权重初始化：$w_i^{(1)} = 1/n$，其中$n$为样本数，$i=1,2,\ldots,n$。
+  - 分类错误率：$\epsilon_t = \sum_{i=1}^{n} w_i^{(t)} \mathbb{I}(y_i \neq h_t(x_i))$，其中$w_i^{(t)}$为第$t$轮第$i$个样本权重，$h_t(x_i)$为第$t$个弱分类器预测，$\mathbb{I}(\cdot)$为指示函数。
+  - 分类器权重：$\alpha_t = \frac{1}{2} \ln\left(\frac{1-\epsilon_t}{\epsilon_t}\right)$，其中$\epsilon_t$为第$t$轮分类错误率。
+  - 样本权重更新：$w_i^{(t+1)} = \frac{w_i^{(t)} \exp(-\alpha_t y_i h_t(x_i))}{\sum_{j=1}^{n} w_j^{(t)} \exp(-\alpha_t
+    y_j h_t(x_j))}$，其中$y_i$为真实标签，$h_t(x_i)$为弱分类器输出。
+  - 最终分类器：$H(x) = \text{sign}\left( \sum_{t=1}^{T} \alpha_t h_t(x) \right)$，其中$T$为弱分类器总数，$\alpha_t$为分类器权重。

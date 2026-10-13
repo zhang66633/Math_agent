@@ -39,13 +39,15 @@ from app.knowledge.schemas import (  # noqa: E402
 KB_ROOT = Path(__file__).resolve().parent.parent / "knowledge_base"
 
 # ── 基线棘轮：当前实测值（2026-10 深度审计，86 张方法卡）。补全内容后应主动下调。──
-BASELINE_MISSING_SCENARIOS = 32
-BASELINE_MISSING_APPLICABLE = 31
-BASELINE_MISSING_FORMULAS = 33
-BASELINE_MISSING_CODE = 2
+# 2026-10-13 已用 scripts/fill_method_card_gaps.py 全部补齐（LLM 生成 + mc_037 手写），
+# 四项缺口均已归零，故基线设 0——今后任何一张卡再缺字段都会直接失败。
+BASELINE_MISSING_SCENARIOS = 0
+BASELINE_MISSING_APPLICABLE = 0
+BASELINE_MISSING_FORMULAS = 0
+BASELINE_MISSING_CODE = 0
 BASELINE_FILENAME_MISMATCH = 26
 # 重名方法卡对数（5 对 = 10 个文件）。合并后下调。
-BASELINE_DUPLICATE_NAMES = 5
+BASELINE_DUPLICATE_NAMES = 0
 
 _MOJIBAKE_MARKERS = ("锟斤拷", "å", "ã")
 
@@ -172,11 +174,10 @@ def test_problem_ref_uses_documented_convention():
 
 
 def test_duplicate_method_names_do_not_regress():
-    """重名卡片棘轮：当前 5 对（见 docs/AUDIT-2026-10.md 的合并建议）。
+    """重名卡片必须为零——2026-10 已合并 5 对（86 → 81 张卡）。
 
-    重名会让同一方法在检索结果里出现两遍、稀释 k 个名额，属真实缺陷；
-    但合并要决定「保留哪一份、unit_id 链接怎么跟过去」，涉及删用户的真实数据，
-    故先用棘轮锁住不恶化，等确认合并方案后再清零。
+    重名会让同一方法在检索结果里出现两遍、稀释 k 个名额。合并时保留内容更丰富的
+    一份，并把 unit_id/content_md 等独有字段迁过去（见 scripts/merge_duplicate_method_cards.py）。
     """
     names: dict[str, list[str]] = defaultdict(list)
     for rel, _d, card, err in _load("methods", "method_card"):
@@ -184,9 +185,7 @@ def test_duplicate_method_names_do_not_regress():
             continue
         names[card.name.strip().lower()].append(rel)
     dups = {k: v for k, v in names.items() if len(v) > 1}
-    assert len(dups) <= BASELINE_DUPLICATE_NAMES, (
-        f"重名方法卡从 {BASELINE_DUPLICATE_NAMES} 对涨到 {len(dups)} 对: {dups}"
-    )
+    assert not dups, f"方法卡重名（需按 scripts/merge_duplicate_method_cards.py 合并）:\n{dups}"
 
 
 def test_no_duplicate_principle_text():
@@ -278,7 +277,12 @@ def _missing_field_counts():
 
 
 def test_content_gaps_do_not_regress():
-    """内容字段缺口只允许减少。补全后请主动下调 BASELINE_* 常量。"""
+    """四项核心内容字段必须全部非空——2026-10 已补齐，基线为 0。
+
+    曾缺口 32/31/33/2（typical_scenarios / applicable_when / formulas / code_snippets），
+    用 scripts/fill_method_card_gaps.py 经 LLM 补齐（mc_037 的代码示例为手写，
+    因 LLM 认为仅凭原理无法合理推断——这个「不硬编」的判断是对的）。
+    """
     sc, ap, fm, cd = _missing_field_counts()
     msgs = []
     if sc > BASELINE_MISSING_SCENARIOS:
@@ -289,7 +293,7 @@ def test_content_gaps_do_not_regress():
         msgs.append(f"缺 formulas: {fm} > 基线 {BASELINE_MISSING_FORMULAS}")
     if cd > BASELINE_MISSING_CODE:
         msgs.append(f"缺 code_snippets: {cd} > 基线 {BASELINE_MISSING_CODE}")
-    assert not msgs, "内容缺口比基线更糟了（补内容或下调基线）:\n" + "\n".join(msgs)
+    assert not msgs, "内容字段又出现缺口:\n" + "\n".join(msgs)
 
 
 def test_filename_id_mismatch_does_not_regress():
@@ -308,11 +312,33 @@ def test_filename_id_mismatch_does_not_regress():
 
 
 def test_knowledge_base_is_not_empty():
-    """防误删：四类数据的规模下限。"""
-    assert len(_kb_files("methods")) >= 80, "方法卡片数量异常偏少"
+    """防误删：四类数据的规模下限。
+
+    2026-10 补入 2024 国赛 C、2025 国赛 C、2023 华数杯 C 后 problems 38 → 41；
+    合并 5 对重名方法卡后 methods 86 → 81，下限随之上调。
+    """
+    assert len(_kb_files("methods")) >= 81, "方法卡片数量异常偏少"
     assert len(_kb_files("papers")) >= 30, "论文数量异常偏少"
-    assert len(_kb_files("problems")) >= 35, "真题数量异常偏少"
+    assert len(_kb_files("problems")) >= 41, "真题数量异常偏少"
     assert len(_kb_files("templates")) >= 3, "模板数量异常偏少"
+
+
+def test_newest_problems_are_covered():
+    """KB 真题必须覆盖到 2025——曾长期停在 2023（2026-10 补齐）。
+
+    这不是「越多越好」的指标，而是防止再次出现「最新三年空缺」的腐化。
+    """
+    from app.knowledge.loader import KnowledgeBaseLoader
+
+    probs = KnowledgeBaseLoader(KB_ROOT).load_all_problems()
+    years = {p.year for p in probs}
+    assert 2024 in years, "缺 2024 年真题"
+    assert 2025 in years, "缺 2025 年真题"
+    # 华数杯是独立赛事（中国未来研究会大数据与数学模型专业委员会主办），
+    # 不应与国赛(CUMCM)混为一谈
+    comps = {p.competition for p in probs}
+    assert "华数杯" in comps, "缺华数杯赛题（2023 C 已入库）"
+    assert "国赛" in comps
 
 
 # ── 类别归一化（审计 2026-10）──────────────────────────
@@ -401,6 +427,7 @@ if __name__ == "__main__":
         test_content_gaps_do_not_regress,
         test_filename_id_mismatch_does_not_regress,
         test_knowledge_base_is_not_empty,
+        test_newest_problems_are_covered,
         test_canonical_categories_cover_synonyms,
         test_get_methods_by_category_exact_match_works,
         test_knowledge_graph_builds_non_empty,

@@ -61,7 +61,47 @@ method_card:
     solution: 欧拉方程只是必要条件，还需检验二阶条件、凸性与存在性。
   - mistake: 对 F 不依赖 x' 的情形仍套用二阶微分方程解法。
     solution: 此时欧拉方程为 F_x=0，通常无法满足边界条件，应判断变分问题是否无解。
-  code_snippets: []
+  code_snippets:
+  - language: python
+    description: 使用sympy符号计算求解最速降线问题的欧拉方程（F = sqrt(1+y'^2)/sqrt(2gy)）
+    code: 'import sympy as sp
+
+
+      # 定义符号
+
+      y = sp.Function(''y'')
+
+      x = sp.symbols(''x'')
+
+      g = sp.symbols(''g'', positive=True)
+
+
+      # 定义被积函数F
+
+      yprime = sp.diff(y(x), x)
+
+      F = sp.sqrt(1 + yprime**2) / sp.sqrt(2*g*y(x))
+
+
+      # 计算欧拉方程: F_y - d/dx(F_{y''}) = 0
+
+      F_y = sp.diff(F, y(x))
+
+      F_yprime = sp.diff(F, yprime)
+
+      dF_yprime_dx = sp.diff(F_yprime, x)
+
+
+      euler_eq = sp.simplify(F_y - dF_yprime_dx)
+
+      print("欧拉方程:", euler_eq)
+
+
+      # 由于F不显含x，可得到首次积分: F - y''*F_{y''} = C
+
+      first_integral = sp.simplify(F - yprime * F_yprime)
+
+      print("首次积分:", first_integral, "= C")'
   related_cards: []
   related_papers: []
   difficulty: 4

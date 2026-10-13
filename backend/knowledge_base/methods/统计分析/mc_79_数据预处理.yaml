@@ -147,8 +147,18 @@ method_card:
     \end{cases}
 
     $$'
-  applicable_when: []
-  typical_scenarios: []
+  applicable_when:
+  - 数据集中存在缺失值，且缺失比例和缺失机制允许删除、填充或插值处理。
+  - 数据中存在异常值，且异常值可由统计准则、距离方法或密度方法识别。
+  - 特征量纲或数量级差异显著，模型对尺度敏感，需要标准化或归一化。
+  - 变量分布偏斜或方差不稳定，需通过对数、Box-Cox 或 Yeo-Johnson 变换改善。
+  - 数据质量不足以直接建模，需要先完成清洗、变换和归约等预处理步骤。
+  typical_scenarios:
+  - 原始数据存在缺失值、异常值或量纲不一致，需要清洗整理后再建模时使用。
+  - 不同特征取值范围差异较大，需进行标准化或归一化以消除量纲影响时使用。
+  - 数据分布偏态明显或存在异方差，需通过变换改善分布形态时使用。
+  - 分类变量或连续变量需要统一编码、缩放或离散化以适配机器学习模型时使用。
+  - 时间序列或表格数据中存在缺失、离群点，需要插值或平滑处理时使用。
   code_snippets:
   - language: python
     description: 数据预处理 实现要点
@@ -193,3 +203,10 @@ method_card:
     - '**散点图矩阵**：特征关系'
     source: math-modeling-skill
   id: mc_79
+  formulas:
+  - 均值填充：$x_{ij} = \bar{x}_j$，其中 $x_{ij}$ 为第 $i$ 个样本第 $j$ 个特征的缺失值，$\bar{x}_j$ 为第 $j$ 个特征的均值。
+  - Z-score 异常值判定：$Z_i = \frac{x_i - \bar{x}}{\sigma}$，当 $|Z_i| > 3$ 时判定为异常值，其中 $\bar{x}$ 为均值，$\sigma$ 为标准差。
+  - Min-Max 归一化：$x'_i = \frac{x_i - \min(x)}{\max(x) - \min(x)}$，将原始值线性映射到 $[0,1]$ 区间。
+  - Z-score 标准化：$x'_i = \frac{x_i - \bar{x}}{\sigma}$，其中 $\bar{x}$ 为均值，$\sigma$ 为标准差。
+  - Box-Cox 变换：$x'_i = \begin{cases} \frac{x_i^\lambda - 1}{\lambda}, & \lambda \neq 0 \\ \ln(x_i), & \lambda
+    = 0 \end{cases}$，其中 $\lambda$ 为变换参数。

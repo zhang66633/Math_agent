@@ -29,8 +29,18 @@ method_card:
     \tau_{ij} = (1 - \rho) \cdot \tau_{ij} + \sum_{k=1}^m \Delta \tau_{ij}^k
 
     $$'
-  applicable_when: []
-  typical_scenarios: []
+  applicable_when:
+  - 问题可以建模为图或网络上的路径选择与组合优化问题。
+  - 目标函数或约束难以用梯度信息直接优化，适合基于种群的启发式搜索。
+  - 解空间较大且存在多个可行路径组合，精确搜索代价过高。
+  - 可以定义路径上的启发式信息（如距离倒数）与信息素浓度共同指导搜索。
+  - 允许通过多次迭代和正反馈机制逐步逼近较优解。
+  typical_scenarios:
+  - 旅行商问题（TSP）中需要寻找访问所有城市一次的最短闭合路径时使用。
+  - 车辆路径规划问题中需要在多约束下为多辆车分配行驶路线时使用。
+  - 网络路由优化中需要在动态拓扑下寻找低延迟或高可靠传输路径时使用。
+  - 组合优化问题中解空间大、精确算法难以在可接受时间内求解时使用。
+  - 路径规划问题中需要利用正反馈机制逐步收敛到较优路径时使用。
   code_snippets:
   - language: python
     description: 蚁群算法 实现要点
@@ -275,3 +285,10 @@ method_card:
     3. 三参数:$\alpha$ 管正反馈强度、$\beta$ 管启发式知识、$\rho$ 管记忆长度;停滞的对策是 MMAS 限幅与只让最优蚁沉积
     4. 适用边界:解由「带权局部选择」拼成的组合问题(TSP/VRP/调度);连续优化勿硬套
     5. 实战报告:15 城 TSP 上 10 次全中精确最优、205 次评估即达 1% 精度——但要记得这是「此类问题」的结论,不是万能药
+  formulas:
+  - P_{ij}^k = \begin{cases} \frac{[\tau_{ij}]^\alpha [\eta_{ij}]^\beta}{\sum_{s \in allowed_k} [\tau_{is}]^\alpha
+    [\eta_{is}]^\beta}, & j \in allowed_k \\ 0, & \text{otherwise} \end{cases}；其中 P_{ij}^k 为第 k 只蚂蚁从节点 i
+    转移到节点 j 的概率，\tau_{ij} 为边 (i,j) 上的信息素浓度，\eta_{ij} 为启发式信息，\alpha 为信息素重要程度，\beta 为启发式信息重要程度，allowed_k 为第
+    k 只蚂蚁当前允许选择的节点集合。
+  - \tau_{ij} = (1 - \rho) \cdot \tau_{ij} + \sum_{k=1}^m \Delta \tau_{ij}^k；其中 \tau_{ij} 为边 (i,j) 上的信息素浓度，\rho
+    为信息素挥发率，m 为蚂蚁数量，\Delta \tau_{ij}^k 为第 k 只蚂蚁在边 (i,j) 上释放的信息素增量。

@@ -50,8 +50,18 @@ method_card:
     \text{s.t. } g(x, \xi) \leq 0, \forall \xi \in U
 
     $$'
-  applicable_when: []
-  typical_scenarios: []
+  applicable_when:
+  - 已知不确定参数的名义值和不确定边界，但缺乏精确概率分布。
+  - 问题约束必须在所有允许的参数实现下成立，即要求鲁棒可行性。
+  - 目标函数或约束函数关于决策变量和不确定参数可建模为可处理形式。
+  - 不确定性集可以表示为盒子、椭球或多面体等凸集合。
+  - 可以通过不确定性预算或集合大小调节解的保守程度。
+  typical_scenarios:
+  - 当优化问题中的参数只能给出区间或集合范围、无法获得精确概率分布时，使用鲁棒优化。
+  - 当决策者要求解在所有可能的不确定性实现下都保持可行时，使用鲁棒优化。
+  - 当需要控制保守程度、在性能与鲁棒性之间权衡时，可使用基于不确定性预算的Bertsimas-Sim模型。
+  - 当不确定性可由椭球集合描述且需考虑参数相关性时，使用椭球不确定性集鲁棒优化。
+  - 当参数扰动边界已知且各参数独立有界时，使用盒子不确定性集鲁棒优化。
   code_snippets:
   - language: python
     description: 鲁棒优化 实现要点
@@ -80,3 +90,12 @@ method_card:
     - '**敏感度分析图**：鲁棒性水平与目标关系'
     source: math-modeling-skill
   id: mc_66
+  formulas:
+  - '盒子不确定性集：$U = \{\xi : |\xi_j - \bar{\xi}_j| \leq \hat{\xi}_j, \forall j\}$，其中 $\bar{\xi}_j$ 为第 $j$ 个参数的名义值，$\hat{\xi}_j$
+    为其最大偏差。'
+  - '椭球不确定性集：$U = \{\xi : (\xi - \bar{\xi})^T \Sigma^{-1} (\xi - \bar{\xi}) \leq \Gamma^2\}$，其中 $\bar{\xi}$
+    为名义值向量，$\Sigma$ 为形状矩阵，$\Gamma$ 控制椭球大小。'
+  - '多面体不确定性集（Bertsimas-Sim）：$U = \{\xi : \xi_j = \bar{\xi}_j + \eta_j \hat{\xi}_j, \|\eta\|_1 \leq \Gamma,
+    \|\eta\|_\infty \leq 1\}$，其中 $\eta_j$ 为扰动比例，$\Gamma$ 为不确定性预算。'
+  - 鲁棒对应问题：$\min_x \max_{\xi \in U} f(x, \xi)$，$\text{s.t. } g(x, \xi) \leq 0, \forall \xi \in U$，其中 $x$
+    为决策变量，$\xi$ 为不确定参数，$U$ 为不确定性集。

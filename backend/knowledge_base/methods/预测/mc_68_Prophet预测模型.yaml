@@ -34,8 +34,18 @@ method_card:
 
 
     **季节项**：$s(t) = \sum_{n=1}^{N} [a_n \cos(\frac{2\pi n t}{P}) + b_n \sin(\frac{2\pi n t}{P})]$'
-  applicable_when: []
-  typical_scenarios: []
+  applicable_when:
+  - 时间序列具有长期趋势成分，且趋势可能发生突变（如政策、市场变化）。
+  - 数据表现出明显的周期性（如年、周、日）且周期长度已知。
+  - 存在已知的节假日或特殊事件，且这些事件对序列有显著影响。
+  - 数据频率为日度、周度或月度，且时间跨度足够覆盖多个季节周期。
+  - 允许使用加法或乘法季节分解，且误差项近似独立同分布。
+  typical_scenarios:
+  - 具有明显季节性的商务时间序列预测，如月度销售额、季度营收等。
+  - 包含节假日效应的业务数据预测，如零售、电商、旅游等行业的日度或周度数据。
+  - 需要快速构建可解释性较强的时间序列预测基线模型时。
+  - 数据存在缺失值或异常值，且希望模型能自动处理这些情况时。
+  - 需要预测未来一段时间趋势并分解趋势、季节、节假日成分的场景。
   code_snippets:
   - language: python
     description: Prophet预测模型 实现要点
@@ -59,3 +69,12 @@ method_card:
     - '**组件影响图**：各组件贡献'
     source: math-modeling-skill
   id: mc_68
+  formulas:
+  - y(t) = g(t) + s(t) + h(t) + \varepsilon_t，其中 y(t) 为时间 t 的观测值，g(t) 为趋势项，s(t) 为季节项，h(t) 为节假日效应，\varepsilon_t
+    为误差项。
+  - g(t) = (k + a_k \delta(t)) \cdot t + (m + a_m \delta(t))，其中 k 为基本增长率，\delta(t) 为指示函数（变点处为1否则0），a_k 为增长率调整量，m
+    为截距，a_m 为截距调整量。
+  - s(t) = \sum_{n=1}^{N} \left[ a_n \cos\left(\frac{2\pi n t}{P}\right) + b_n \sin\left(\frac{2\pi n t}{P}\right)
+    \right]，其中 N 为傅里叶级数阶数，P 为周期长度（如年=365.25，周=7），a_n, b_n 为待估系数。
+  - h(t) = \sum_{i=1}^{L} \kappa_i \cdot 1_{\{t \in D_i\}}，其中 L 为节假日数量，\kappa_i 为第 i 个节假日效应，D_i 为第 i 个节假日对应的时间集合，1
+    为指示函数。

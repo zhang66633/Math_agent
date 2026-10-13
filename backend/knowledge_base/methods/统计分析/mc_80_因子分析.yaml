@@ -64,8 +64,18 @@ method_card:
     - Promax旋转
 
     - Oblimin旋转'
-  applicable_when: []
-  typical_scenarios: []
+  applicable_when:
+  - 可观测变量为连续变量或近似连续变量，且变量间存在相关性。
+  - 样本量相对变量数足够大，数据矩阵适合进行相关结构分析。
+  - 研究目标是用少数潜在变量解释多个可观测变量的共同变异。
+  - 可以合理假设观测变量由公共因子和特殊因子线性组合而成。
+  - 若采用最大似然法，还需假设数据近似服从多元正态分布。
+  typical_scenarios:
+  - 当多个可观测变量之间存在较强相关性，希望用少数潜在因子概括原始变量结构时使用。
+  - 在问卷调查或心理测量中，需要识别题目背后的潜在维度或构念时使用。
+  - 在探索性数据分析中，需要降维并解释变量间共同变异来源时使用。
+  - 当希望得到可解释的因子结构，并通过旋转使载荷更清晰时使用。
+  - 当需要计算公共因子方差、因子载荷或因子得分以辅助后续建模时使用。
   code_snippets:
   - language: python
     description: 因子分析 实现要点
@@ -102,3 +112,10 @@ method_card:
     - '**路径图**：因子结构'
     source: math-modeling-skill
   id: mc_80
+  formulas:
+  - X = \mu + \Lambda F + \epsilon，其中 X 为可观测变量向量，\mu 为均值向量，\Lambda 为因子载荷矩阵，F 为公共因子向量，\epsilon 为特殊因子（误差）向量。
+  - \mathrm{Cov}(X) = \Lambda \Phi \Lambda^{T} + \Psi，其中 \Phi 为公共因子协方差矩阵，\Psi 为特殊因子协方差矩阵；正交因子模型下 \Phi =
+    I。
+  - h_i^2 = \sum_{j=1}^{m} \lambda_{ij}^2，其中 h_i^2 为第 i 个变量的公共因子方差，\lambda_{ij} 为第 i 个变量在第 j 个因子上的载荷，m 为公共因子个数。
+  - X = \mu + \Lambda F + \epsilon \Rightarrow \mathrm{Var}(X_i) = \sum_{j=1}^{m} \lambda_{ij}^2 + \psi_i，其中
+    \psi_i 为第 i 个变量的特殊方差。

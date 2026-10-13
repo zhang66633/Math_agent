@@ -6,9 +6,11 @@ import logging
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
+from ..auth import resolve_user_id
 from ..auth.dependencies import decode_jwt
 from ..config import get_settings
 from ..services.redis_pubsub import RedisSubscriber
+from ..services.session import get_session_manager
 
 logger = logging.getLogger(__name__)
 ws_router = APIRouter()
@@ -21,12 +23,18 @@ async def task_websocket(websocket: WebSocket, task_id: str, token: str = Query(
     Requires a valid JWT passed as ?token=<jwt> query parameter.
     Subscribes to Redis Pub/Sub channel ``task:{task_id}`` and forwards
     every published event to the connected frontend client.
+
+    鉴权 + 属主校验（审计 2026-10 P0-1）：此前本端点只 decode 不校验，
+    任何拿到 task_id 的人都能订阅他人任务的实时执行过程。现在按 token
+    解析归属，与 REST 侧共用 resolve_user_id；访客仍放行（未登录 → guest
+    桶），否则方案页对未登录用户会全程空白。
     """
-    # ── 鉴权（访客放行）──
-    # 原实现强制 JWT：未登录访客连 WS 都建立不了，可经 REST /messages 看结果
-    # 却看不到任何实时过程——方案页全程空白（本轮实测复现的断点）。
-    # REST 侧本就无认证，故这里对缺失/非法 token 一律按访客放行。
-    _ = decode_jwt(token) if token else None
+    user = decode_jwt(token) if token else None
+    uid = resolve_user_id(user)
+    if not get_session_manager().get_owned(task_id, uid):
+        # 未 accept 直接 close：对未授权方不泄露 task_id 是否存在
+        await websocket.close(code=1008, reason="task not found or not yours")
+        return
 
     await websocket.accept()
     settings = get_settings()

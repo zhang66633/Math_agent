@@ -3,9 +3,10 @@
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from ..auth import GitHubUser, get_current_user, resolve_user_id
 from ..learning.mastery_tracker import get_mastery_tracker
 from ..learning.path_generator import generate_learning_path, get_unit_detail
 from ..learning.schemas import (
@@ -19,6 +20,15 @@ from ..learning.schemas import (
 from ..services.achievement_service import get_achievement_service
 
 learning_router = APIRouter(prefix="/learning", tags=["Learning"])
+
+
+def _uid(user: GitHubUser | None) -> str:
+    """数据归属 id——**只从登录态来，绝不接受客户端传的 user_id**。
+
+    审计 2026-10 P0-2：此前约 20 处路由把 user_id 当 query/body 参数，
+    未登录也能读写任意 user_id 的学习进度/错题本/成就。
+    """
+    return resolve_user_id(user)
 
 
 # ── 学习路径 ──────────────────────────────────────────
@@ -71,12 +81,21 @@ async def get_unit(unit_id: str):
 
 
 class UnitCompleteRequest(BaseModel):
-    user_id: str = "default"
+    """标记单元完成的请求体。
+
+    user_id 已移除：归属只由服务端登录态决定（审计 2026-10 P0-2）。
+    前端 learningApi.markUnitComplete 原会发 user_id，Pydantic 默认忽略多余字段。
+    """
 
 
 @learning_router.post("/units/{unit_id}/complete")
-async def complete_unit(unit_id: str, req: UnitCompleteRequest):
+async def complete_unit(
+    unit_id: str,
+    req: UnitCompleteRequest,
+    user: GitHubUser | None = Depends(get_current_user),
+):
     """标记学习单元为完成，并更新贝叶斯掌握度。"""
+    uid = _uid(user)
     unit = get_unit_detail(unit_id)
     if not unit:
         raise HTTPException(status_code=404, detail=f"学习单元 {unit_id} 不存在")
@@ -86,7 +105,7 @@ async def complete_unit(unit_id: str, req: UnitCompleteRequest):
     skill_ids = unit.tags or [unit_id]
     event = LearningEvent(
         event_id=f"evt_{uuid.uuid4().hex[:8]}",
-        user_id=req.user_id,
+        user_id=uid,
         unit_id=unit_id,
         skill_ids=skill_ids,
         event_type="learn",
@@ -100,7 +119,7 @@ async def complete_unit(unit_id: str, req: UnitCompleteRequest):
         unit_id=unit_id,
         event_type="learn",
         score=1.0,
-        user_id=req.user_id,
+        user_id=uid,
     )
     guard = getattr(tracker, "_replayed_ids", None)
     if guard is None:
@@ -109,7 +128,7 @@ async def complete_unit(unit_id: str, req: UnitCompleteRequest):
     if row_id is not None:
         guard.add(row_id)
 
-    tracker.update_from_event(req.user_id, event)
+    tracker.update_from_event(uid, event)
 
     # 记录到成就系统
     achievement_service = get_achievement_service()
@@ -118,7 +137,7 @@ async def complete_unit(unit_id: str, req: UnitCompleteRequest):
     # 更新单元状态
     unit.status = UnitStatus.COMPLETED
     unit.mastery_score = tracker.get_role_overall(
-        req.user_id,
+        uid,
         skill_ids,
     )
 
@@ -198,9 +217,10 @@ async def quiz_bank(
     difficulty: str | None = None,
     role: str | None = None,
     unit_id: str | None = None,
-    user_id: str = "default",
+    user: GitHubUser | None = Depends(get_current_user),
 ):
     """题库浏览: 按类别/难度/角色/单元过滤,附用户作答状态(不含答案)。"""
+    uid = _uid(user)
     questions = list_questions(
         category=category,
         difficulty=difficulty,
@@ -208,9 +228,9 @@ async def quiz_bank(
         unit_id=unit_id,
     )
     store = get_practice_store()
-    wrong_ids = store.get_wrong_question_ids(user_id)
-    counts = store.get_wrong_counts(user_id)
-    tried = store.get_tried_ids(user_id)
+    wrong_ids = store.get_wrong_question_ids(uid)
+    counts = store.get_wrong_counts(uid)
+    tried = store.get_tried_ids(uid)
 
     views = []
     for q in questions:
@@ -232,7 +252,7 @@ async def quiz_bank(
 
 class QuizPracticeRequest(BaseModel):
     question_ids: list[str]
-    user_id: str = "default"
+    # user_id 已移除：归属只由服务端登录态决定（审计 2026-10 P0-2）
 
 
 class QuizPracticeResponse(BaseModel):
@@ -240,17 +260,21 @@ class QuizPracticeResponse(BaseModel):
 
 
 @learning_router.post("/quiz/practice", response_model=QuizPracticeResponse)
-async def quiz_practice(req: QuizPracticeRequest):
+async def quiz_practice(
+    req: QuizPracticeRequest,
+    user: GitHubUser | None = Depends(get_current_user),
+):
     """按用户勾选的题目创建一轮练习(校验题目存在,按勾选顺序返回)。"""
+    uid = _uid(user)
     if not req.question_ids:
         raise HTTPException(status_code=400, detail="至少选择一道题")
     if len(req.question_ids) > MAX_QUIZ_PER_ROUND:
         raise HTTPException(status_code=400, detail=f"单轮最多 {MAX_QUIZ_PER_ROUND} 题")
 
     store = get_practice_store()
-    wrong_ids = store.get_wrong_question_ids(req.user_id)
-    counts = store.get_wrong_counts(req.user_id)
-    tried = store.get_tried_ids(req.user_id)
+    wrong_ids = store.get_wrong_question_ids(uid)
+    counts = store.get_wrong_counts(uid)
+    tried = store.get_tried_ids(uid)
 
     views = []
     for qid in req.question_ids:
@@ -271,7 +295,7 @@ async def quiz_practice(req: QuizPracticeRequest):
 class QuizAnswerRequest(BaseModel):
     question_id: str
     choice: int
-    user_id: str = "default"
+    # user_id 已移除：归属只由服务端登录态决定（审计 2026-10 P0-2）
     round_id: str = ""  # 练习轮次(供中途退出丢弃)
 
 
@@ -283,8 +307,12 @@ class QuizAnswerResponse(BaseModel):
 
 
 @learning_router.post("/quiz/answer", response_model=QuizAnswerResponse)
-async def quiz_answer(req: QuizAnswerRequest):
+async def quiz_answer(
+    req: QuizAnswerRequest,
+    user: GitHubUser | None = Depends(get_current_user),
+):
     """判分一道选择题: 记录作答,错误自动入错题本,并驱动掌握度/成就。"""
+    uid = _uid(user)
     q = get_question(req.question_id)
     if not q:
         raise HTTPException(status_code=404, detail=f"题目 {req.question_id} 不存在")
@@ -297,7 +325,7 @@ async def quiz_answer(req: QuizAnswerRequest):
         req.question_id,
         req.choice,
         correct,
-        req.user_id,
+        uid,
         req.round_id,
     )
 
@@ -306,7 +334,7 @@ async def quiz_answer(req: QuizAnswerRequest):
     skill_ids = [q["unit_id"]] + (unit.tags if unit else [])
     event = LearningEvent(
         event_id=f"evt_{uuid.uuid4().hex[:8]}",
-        user_id=req.user_id,
+        user_id=uid,
         unit_id=q["unit_id"],
         skill_ids=skill_ids,
         event_type="practice",
@@ -314,7 +342,7 @@ async def quiz_answer(req: QuizAnswerRequest):
         created_at=datetime.utcnow(),
     )
     tracker = get_mastery_tracker()
-    tracker.update_from_event(req.user_id, event)
+    tracker.update_from_event(uid, event)
     # 标记该记录已实时入账,防进度页重放时双计
     guard = getattr(tracker, "_replayed_ids", None)
     if guard is None:
@@ -327,7 +355,7 @@ async def quiz_answer(req: QuizAnswerRequest):
         unit_id=q["unit_id"],
         event_type="practice",
         score=1.0 if correct else 0.0,
-        user_id=req.user_id,
+        user_id=uid,
     )
 
     return QuizAnswerResponse(
@@ -344,11 +372,12 @@ class QuizMistakeResponse(BaseModel):
 
 
 @learning_router.get("/quiz/mistakes", response_model=QuizMistakeResponse)
-async def quiz_mistakes(user_id: str = "default"):
+async def quiz_mistakes(user: GitHubUser | None = Depends(get_current_user)):
     """错题本: 最新一次作答仍错误的题目列表(附上次错误选项)。"""
+    uid = _uid(user)
     store = get_practice_store()
-    wrong_ids = store.get_wrong_question_ids(user_id)
-    counts = store.get_wrong_counts(user_id)
+    wrong_ids = store.get_wrong_question_ids(uid)
+    counts = store.get_wrong_counts(uid)
 
     views = []
     for qid in sorted(wrong_ids):
@@ -367,40 +396,53 @@ async def quiz_mistakes(user_id: str = "default"):
 
 
 @learning_router.post("/quiz/mistakes/{question_id}")
-async def quiz_mistake_add(question_id: str, user_id: str = "default"):
+async def quiz_mistake_add(
+    question_id: str,
+    user: GitHubUser | None = Depends(get_current_user),
+):
     """手动把题目加入错题本(幂等,用于标记想重点复习的题)。"""
     if not get_question(question_id):
         raise HTTPException(status_code=404, detail=f"题目 {question_id} 不存在")
-    get_practice_store().add_to_mistake_book(question_id, user_id)
+    get_practice_store().add_to_mistake_book(question_id, _uid(user))
     return {"status": "ok", "message": f"题目 {question_id} 已加入错题本"}
 
 
 @learning_router.delete("/quiz/mistakes/{question_id}")
-async def quiz_mistake_remove(question_id: str, user_id: str = "default"):
+async def quiz_mistake_remove(
+    question_id: str,
+    user: GitHubUser | None = Depends(get_current_user),
+):
     """手动把题目移出错题本(不重做直接删)。"""
-    get_practice_store().remove_from_mistake_book(question_id, user_id)
+    get_practice_store().remove_from_mistake_book(question_id, _uid(user))
     return {"status": "ok", "message": f"题目 {question_id} 已移出错题本"}
 
 
 @learning_router.post("/quiz/round/{round_id}/discard")
-async def quiz_round_discard(round_id: str, user_id: str = "default"):
+async def quiz_round_discard(
+    round_id: str,
+    user: GitHubUser | None = Depends(get_current_user),
+):
     """半路退出: 丢弃本轮全部作答记录,错题本状态重算(不留痕迹)。"""
     if not round_id:
         raise HTTPException(status_code=400, detail="round_id 不能为空")
-    discarded = get_practice_store().discard_round(round_id, user_id)
+    discarded = get_practice_store().discard_round(round_id, _uid(user))
     return {"status": "ok", "discarded": discarded}
 
 
 @learning_router.get("/quiz/by-unit/{unit_id}", response_model=QuizPracticeResponse)
-async def quiz_by_unit(unit_id: str, user_id: str = "default"):
+async def quiz_by_unit(
+    unit_id: str,
+    user: GitHubUser | None = Depends(get_current_user),
+):
     """某学习单元的自测题(供单元页「单元自测」块使用)。"""
+    uid = _uid(user)
     unit = get_unit_detail(unit_id)
     if not unit:
         raise HTTPException(status_code=404, detail=f"学习单元 {unit_id} 不存在")
     store = get_practice_store()
-    wrong_ids = store.get_wrong_question_ids(user_id)
-    counts = store.get_wrong_counts(user_id)
-    tried = store.get_tried_ids(user_id)
+    wrong_ids = store.get_wrong_question_ids(uid)
+    counts = store.get_wrong_counts(uid)
+    tried = store.get_tried_ids(uid)
 
     views = []
     for q in get_by_unit(unit_id):

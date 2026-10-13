@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from ..auth import GitHubUser, get_current_user
+from ..auth import GitHubUser, get_current_user, resolve_user_id
 from ..config import get_settings
 from .schemas.request import ApiKeyCreate, ApiKeyQuickCreate
 from .schemas.response import ApiKeyResponse
@@ -131,10 +131,12 @@ def _resolve_user_id(request: Request | None = None, user: GitHubUser | None = N
 
     - Logged-in GitHub user → use login name
     - Guest → use "guest" (shared guest pool)
+
+    逻辑真源在 app.auth.resolve_user_id；此处 guest 桶沿用 "guest" 而非
+    "default"，是因为存量 apikeys.json 的钥匙都挂在 "guest" 下，改字面量
+    会让已配置的 Key 全部失联。
     """
-    if user and user.login:
-        return user.login
-    return "guest"
+    return resolve_user_id(user, guest="guest")
 
 
 def get_active_api_key(user_id: str | None = None, purpose: str = "chat") -> dict | None:

@@ -9,7 +9,7 @@ from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 
-from ..auth import GitHubUser, get_current_user
+from ..auth import GitHubUser, get_current_user, resolve_user_id
 from ..config import get_settings
 from ..core.node_helpers import _pub_event
 from ..services.session import get_session_manager
@@ -20,6 +20,18 @@ from .schemas.response import MessageResponse, TaskResponse
 logger = logging.getLogger(__name__)
 
 tasks_router = APIRouter()
+
+
+def _owned_task_or_404(task_id: str, owner: str) -> dict:
+    """按属主取任务，不存在/不属于本人一律 404。
+
+    审计 2026-10 P0：此前整组 tasks 路由注入了 user 却从不使用，
+    无鉴权即可读/取消他人任务。统一收口到这里，别再绕过。
+    """
+    task = get_session_manager().get_owned(task_id, owner)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return task
 
 
 # ── 附件内容提取（方案模式把上传的题目/数据文件读进问题上下文）────────
@@ -149,7 +161,8 @@ async def create_task(
     full_problem = await asyncio.to_thread(
         _build_problem_with_attachments, req.problem, req.files
     )
-    task = session_mgr.create(problem=full_problem, mode=req.mode)
+    # owner 落库：没有它，后续所有读/取消都无法按用户隔离（审计 P0-1）
+    task = session_mgr.create(problem=full_problem, mode=req.mode, owner=uid)
     task_id = task["task_id"]
 
     # 文件区：记录用户上传的附件（供前端文件区展示与下载）
@@ -188,6 +201,8 @@ async def get_task_status(task_id: str, user: GitHubUser | None = Depends(get_cu
       - resume_stage: 下一步应执行的阶段（None 表示已完成）
       - is_active: 是否有未完成的任务
     """
+    # 先校验属主再碰 WorkingMemory——否则 task_id 可被遍历探测他人进度
+    _owned_task_or_404(task_id, resolve_user_id(user))
     from app.services.working_memory import WorkingMemory
 
     wm = WorkingMemory(task_id)
@@ -202,26 +217,20 @@ async def get_task_status(task_id: str, user: GitHubUser | None = Depends(get_cu
 
 @tasks_router.get("/tasks/{task_id}", response_model=TaskResponse)
 async def get_task(task_id: str, user: GitHubUser | None = Depends(get_current_user)):
-    task = get_session_manager().get(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="任务不存在")
+    task = _owned_task_or_404(task_id, resolve_user_id(user))
     return TaskResponse(**task)
 
 
 @tasks_router.get("/tasks/{task_id}/messages", response_model=list[MessageResponse])
 async def get_task_messages(task_id: str, user: GitHubUser | None = Depends(get_current_user)):
-    task = get_session_manager().get(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="任务不存在")
+    task = _owned_task_or_404(task_id, resolve_user_id(user))
     return [MessageResponse(**m) for m in task.get("messages", [])]
 
 
 @tasks_router.get("/tasks/{task_id}/files")
 async def get_task_files(task_id: str, user: GitHubUser | None = Depends(get_current_user)):
     """任务文件区：上传的附件 + 生成的图表/结果文件。"""
-    task = get_session_manager().get(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="任务不存在")
+    task = _owned_task_or_404(task_id, resolve_user_id(user))
     return {"task_id": task_id, "files": task.get("artifacts", [])}
 
 
@@ -238,6 +247,7 @@ async def get_task_events(
     plan / tool_call / tool_result / code_exec / task_end）。前端进会话时调用本端点
     恢复进度视图（dsh 式 session-projection 回放），配合 WS 实时事件使用。
     """
+    _owned_task_or_404(task_id, resolve_user_id(user))
     from app.core.node_helpers import read_task_events
 
     events, total = read_task_events(task_id, after=after, limit=limit)
@@ -254,15 +264,21 @@ async def get_task_events(
 async def cancel_task(task_id: str, user: GitHubUser | None = Depends(get_current_user)):
     # cancel 含 sessions.json 全量落盘——绝不能在主循环线程里同步做
     # （曾与编排器线程争锁一起把事件循环堵死，所有请求 60s 无响应）
-    success = await asyncio.to_thread(get_session_manager().cancel, task_id)
+    # owner 校验前移，避免未授权方探知 task_id 是否存在（审计 2026-10 P0-1）
+    uid = resolve_user_id(user)
+    if not get_session_manager().get_owned(task_id, uid):
+        raise HTTPException(status_code=404, detail="任务不存在")
+    success = await asyncio.to_thread(get_session_manager().cancel, task_id, uid)
     if not success:
         raise HTTPException(status_code=404, detail="任务不存在")
     return {"success": True, "message": "任务已取消"}
 
 
 @tasks_router.get("/tasks", response_model=list[TaskResponse])
-async def list_tasks():
-    return [TaskResponse(**t) for t in get_session_manager().list_all()]
+async def list_tasks(user: GitHubUser | None = Depends(get_current_user)):
+    # 只列本人的任务。此前本路由无鉴权且返回全量，等同于把所有用户的
+    # 赛题原文和 Agent 产出公开（审计 2026-10 P0-1）。
+    return [TaskResponse(**t) for t in get_session_manager().list_for_owner(resolve_user_id(user))]
 
 
 # ── Background orchestrator runner ────────────────────────────────
@@ -516,9 +532,7 @@ async def export_document(
     - format=xlsx:  Excel 结果表
     - format=csv:   CSV 数据文件
     """
-    task = get_session_manager().get(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="任务不存在")
+    task = _owned_task_or_404(task_id, resolve_user_id(user))
 
     final_response = task.get("final_response", "")
     if not final_response:
@@ -704,6 +718,7 @@ async def download_package(
     user: GitHubUser | None = Depends(get_current_user),
 ):
     """下载完整结果包（zip：论文 + 数据 + 图表 + 代码）。"""
+    _owned_task_or_404(task_id, resolve_user_id(user))
     from pathlib import Path as _Path
 
     settings = get_settings()

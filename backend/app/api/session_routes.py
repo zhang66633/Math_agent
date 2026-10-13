@@ -10,7 +10,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from ..auth import GitHubUser, get_current_user
+from ..auth import GitHubUser, get_current_user, resolve_user_id
 from ..services.sqlite_session_store import get_sqlite_store
 
 logger = logging.getLogger(__name__)
@@ -22,8 +22,11 @@ GUEST_USER_ID = "default"
 
 
 def _resolve_uid(user: GitHubUser | None) -> str:
-    """登录用户按 GitHub login 隔离；访客落入共享桶。"""
-    return user.login if (user and user.login) else GUEST_USER_ID
+    """登录用户按 GitHub login 隔离；访客落入共享桶。
+
+    真源在 app.auth.resolve_user_id——这里保留薄封装只为不改动下方 8 个调用点。
+    """
+    return resolve_user_id(user, guest=GUEST_USER_ID)
 
 
 # ── 请求/响应模型 ─────────────────────────────────────

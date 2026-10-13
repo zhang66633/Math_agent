@@ -1,8 +1,9 @@
 """用户画像 API — 角色选择、水平诊断、进度查询."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
+from ..auth import GitHubUser, get_current_user, resolve_user_id
 from ..learning.schemas import (
     AgentRole,
     LearningGoal,
@@ -41,14 +42,25 @@ def _get_or_create(user_id: str) -> UserProfile:
     return _profiles[user_id]
 
 
+def _uid(user: GitHubUser | None) -> str:
+    """数据归属 id——只从登录态来。
+
+    审计 2026-10 P0-2：此前本文件把 user_id 硬编码成 "default"（还挂着
+    「TODO: 后续对接 auth」），导致所有人的画像、进度、成就全混在一桶里。
+    """
+    return resolve_user_id(user)
+
+
 # ── 路由 ─────────────────────────────────────────────
 
 
 @profile_router.post("/diagnose", response_model=ProfileResponse)
-async def diagnose(req: DiagnoseRequest):
+async def diagnose(
+    req: DiagnoseRequest,
+    user: GitHubUser | None = Depends(get_current_user),
+):
     """初始诊断: 选择角色 + 水平自评."""
-    user_id = "default"  # TODO: 后续对接 auth
-    profile = _get_or_create(user_id)
+    profile = _get_or_create(_uid(user))
 
     try:
         role = AgentRole(req.role)
@@ -69,22 +81,25 @@ async def diagnose(req: DiagnoseRequest):
 
 
 @profile_router.get("", response_model=ProfileResponse)
-async def get_profile():
+async def get_profile(user: GitHubUser | None = Depends(get_current_user)):
     """获取当前用户画像."""
-    profile = _get_or_create("default")
+    profile = _get_or_create(_uid(user))
     return ProfileResponse(profile=profile)
 
 
 @profile_router.put("/roles", response_model=ProfileResponse)
-async def update_roles(roles: list[dict]):
+async def update_roles(
+    roles: list[dict],
+    user: GitHubUser | None = Depends(get_current_user),
+):
     """更新角色配置."""
-    profile = _get_or_create("default")
+    profile = _get_or_create(_uid(user))
     profile.roles = [RoleProfile(**r) for r in roles]
     return ProfileResponse(profile=profile)
 
 
 @profile_router.get("/progress", response_model=dict)
-async def get_progress():
+async def get_progress(user: GitHubUser | None = Depends(get_current_user)):
     """成长档案数据: 统计大屏/日历热力图/勋章墙(带进度)/待复习/角色掌握度。"""
     from ..learning.mastery_tracker import get_mastery_tracker
     from ..learning.unit_content import ALL_UNITS
@@ -92,16 +107,17 @@ async def get_progress():
     from ..services.learning_store import get_learning_store
     from ..services.practice_store import get_practice_store
 
+    uid = _uid(user)
     tracker = get_mastery_tracker()
     achievement_service = get_achievement_service()
     lstore = get_learning_store()
     pstore = get_practice_store()
 
     # 掌握度恢复: 事件重放到 tracker(重启不丢)
-    _replay_events_to_tracker(tracker)
+    _replay_events_to_tracker(tracker, uid)
 
     # 应用艾宾浩斯遗忘衰减
-    needs_review = tracker.apply_decay("default")
+    needs_review = tracker.apply_decay(uid)
 
     # 角色掌握度(修 bug: 传各角色真实 skill 集合而非空列表)
     role_skill_ids: dict[str, list[str]] = {"modeler": [], "programmer": [], "writer": []}
@@ -110,13 +126,11 @@ async def get_progress():
             role_skill_ids[role].append(u.unit_id)
 
     # 统计
-    pstats = pstore.get_stats("default")
-    persisted_events = lstore.list_events("default")
+    pstats = pstore.get_stats(uid)
+    persisted_events = lstore.list_events(uid)
     completed_units = len({r["unit_id"] for r in persisted_events if r["event_type"] == "learn"})
-    streak_days = _calc_streak_dates(
-        pstore.active_dates("default") | lstore.active_dates("default")
-    )
-    achievements = achievement_service.check_all("default")
+    streak_days = _calc_streak_dates(pstore.active_dates(uid) | lstore.active_dates(uid))
+    achievements = achievement_service.check_all(uid)
     unlocked_count = sum(1 for a in achievements if a["unlocked"])
 
     return {
@@ -134,20 +148,18 @@ async def get_progress():
             "unlocked_achievements": unlocked_count,
             "total_achievements": len(achievements),
         },
-        "calendar": _build_calendar(
-            pstore.active_dates("default") | lstore.active_dates("default")
-        ),
+        "calendar": _build_calendar(pstore.active_dates(uid) | lstore.active_dates(uid)),
         "achievements": achievements,
         "needs_review": [
             {"skill_id": sid, "retention": round(ret, 2)}
             for sid, ret in sorted(needs_review.items(), key=lambda x: x[1])[:8]
         ],
         "roles": {
-            "modeler": round(tracker.get_role_overall("default", role_skill_ids["modeler"]), 2),
+            "modeler": round(tracker.get_role_overall(uid, role_skill_ids["modeler"]), 2),
             "programmer": round(
-                tracker.get_role_overall("default", role_skill_ids["programmer"]), 2
+                tracker.get_role_overall(uid, role_skill_ids["programmer"]), 2
             ),
-            "writer": round(tracker.get_role_overall("default", role_skill_ids["writer"]), 2),
+            "writer": round(tracker.get_role_overall(uid, role_skill_ids["writer"]), 2),
         },
         "weekly": _weekly_message(
             streak_days=streak_days,
@@ -159,11 +171,11 @@ async def get_progress():
 
 
 @profile_router.post("/achievements/ack")
-async def ack_achievements():
+async def ack_achievements(user: GitHubUser | None = Depends(get_current_user)):
     """成就已读(前端庆祝弹窗关闭后调用,消 NEW 角标)。"""
     from ..services.achievement_service import get_achievement_service
 
-    get_achievement_service().ack_all("default")
+    get_achievement_service().ack_all(_uid(user))
     return {"status": "ok"}
 
 
@@ -174,8 +186,10 @@ def _parse_naive_dt(iso: str):
     return datetime.fromisoformat(iso).replace(tzinfo=None)
 
 
-def _replay_events_to_tracker(tracker) -> None:
+def _replay_events_to_tracker(tracker, user_id: str) -> None:
     """把持久层事件重放到掌握度追踪器(进程内幂等: 防同事件重复抬峰值)。
+
+    user_id: 归属 id，由调用方从登录态解析（勿再用硬编码 "default"）。
 
     来源二: ①learning_events(事件钩子落库)②practice_records(历史作答,
     事件钩子上线前的练习也能恢复掌握度)。
@@ -189,17 +203,17 @@ def _replay_events_to_tracker(tracker) -> None:
         replayed = set()
         tracker._replayed_ids = replayed
 
-    for row in get_learning_store().list_events("default"):
+    for row in get_learning_store().list_events(user_id):
         if row["event_type"] == "practice":
             continue  # 练习掌握度统一从 practice_records 重放,避免双计
         if row["id"] in replayed:
             continue
         replayed.add(row["id"])
         tracker.update_from_event(
-            "default",
+            user_id,
             LearningEvent(
                 event_id=f"replay_{row['id']}",
-                user_id="default",
+                user_id=user_id,
                 unit_id=row["unit_id"],
                 skill_ids=[row["unit_id"]],
                 event_type=row["event_type"],
@@ -210,7 +224,7 @@ def _replay_events_to_tracker(tracker) -> None:
 
     from ..learning.quiz_bank import get_question
 
-    for row in get_practice_store().list_records("default"):
+    for row in get_practice_store().list_records(user_id):
         key = f"pr_{row['id']}"
         if key in replayed:
             continue
@@ -219,10 +233,10 @@ def _replay_events_to_tracker(tracker) -> None:
         q = get_question(row["question_id"])
         unit_id = q["unit_id"] if q else row["question_id"]
         tracker.update_from_event(
-            "default",
+            user_id,
             LearningEvent(
                 event_id=key,
-                user_id="default",
+                user_id=user_id,
                 unit_id=unit_id,
                 skill_ids=[unit_id],
                 event_type="practice",

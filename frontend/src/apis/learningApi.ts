@@ -48,11 +48,9 @@ export function fetchUnitDetail(unitId: string) {
   return request.get<{ unit: LearningUnit }>(`/learning/units/${unitId}`);
 }
 
-/** 标记学习单元为完成 */
+/** 标记学习单元为完成（归属由后端按登录态判定，不传 user_id） */
 export function markUnitComplete(unitId: string) {
-  return request.post(`/learning/units/${unitId}/complete`, {
-    user_id: "default",
-  });
+  return request.post(`/learning/units/${unitId}/complete`, {});
 }
 
 /** 下一步推荐响应(review_units 后端恒为空,按 unknown[] 兼容) */

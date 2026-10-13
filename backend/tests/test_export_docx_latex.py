@@ -7,6 +7,7 @@
 """
 
 import docx
+import pytest
 
 from app.services.md_docx import (
     content_disposition,
@@ -80,7 +81,9 @@ def test_docx_parses_inline_formatting() -> None:
     text = "\n".join(p.text for p in doc.paragraphs)
     assert "**" not in text, "加粗标记必须被解析掉"
     assert "利润最大化" in text
-    assert "[公式: " in text, "Word 无法承载 LaTeX，公式应降级为可读文本"
+    # 行内公式降级为可读文本；而独立公式（$$...$$）已升级为 Word 原生公式，
+    # 因此不会再以 [公式: ...] 的形式出现在纯文本段落里。
+    assert "[x_1 " in text, "行内公式应降级为可读文本"
 
 
 def test_docx_keeps_code_block_content() -> None:
@@ -142,3 +145,56 @@ def test_markdown_to_latex_python_block_becomes_verbatim() -> None:
     assert "\\begin{verbatim}" in tex
     assert "import numpy" in tex
     assert tex.startswith("\\documentclass")
+
+
+# ── 4. 公式：Word 原生公式（OMML） ─────────────────────────────────
+
+
+def _omml_available() -> bool:
+    pytest.importorskip("latex2mathml")
+    from app.services.md_docx import _find_mml2omml_xsl
+
+    return _find_mml2omml_xsl() is not None
+
+
+def test_latex_to_omml_produces_math_element() -> None:
+    """LaTeX → OMML 应产出 Word 原生公式节点（缺 Office XSL 时跳过）。"""
+    if not _omml_available():
+        pytest.skip("本机无 MML2OMML.XSL（未安装 Office）")
+    from app.services.md_docx import latex_to_omml
+
+    omml = latex_to_omml(r"\frac{a}{b}")
+    assert omml is not None
+    assert "<m:oMath" in omml
+
+
+def test_docx_contains_native_formula_not_text(tmp_path) -> None:
+    """回归：独立公式块必须写进 docx 作为 <m:oMath>，不再是 [公式: ...] 文本降级。"""
+    if not _omml_available():
+        pytest.skip("本机无 MML2OMML.XSL（未安装 Office）")
+    import zipfile
+
+    doc = docx.Document()
+    markdown_to_docx(doc, "$$\\max\\ Z = 5x_1 + 4x_2$$\n\n| a | b |\n| --- | --- |\n| 1 | 2 |")
+    path = tmp_path / "formula.docx"
+    doc.save(str(path))
+
+    xml = zipfile.ZipFile(path).read("word/document.xml").decode("utf-8")
+    assert "<m:oMath" in xml, "独立公式应转成 Word 原生公式"
+    assert "[公式: " not in xml, "不应残留文本降级标记"
+    assert len(doc.tables) == 1, "公式处理不得影响表格"
+
+
+def test_formula_falls_back_to_text_without_xslt(monkeypatch) -> None:
+    """拿不到 XSLT 时必须平滑降级为文本、不得抛错（未装 Office 的机器仍要能导出）。"""
+    from app.services import md_docx
+
+    monkeypatch.setattr(md_docx, "_get_xslt", lambda: None)
+    md_docx.latex_to_omml.cache_clear()
+    try:
+        doc = docx.Document()
+        md_docx.markdown_to_docx(doc, "$$\\frac{a}{b}$$")
+        text = "\n".join(p.text for p in doc.paragraphs)
+        assert "[公式: " in text
+    finally:
+        md_docx.latex_to_omml.cache_clear()

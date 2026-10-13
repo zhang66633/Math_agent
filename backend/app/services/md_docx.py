@@ -16,9 +16,13 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Callable
+from functools import lru_cache
 from urllib.parse import quote
+
+logger = logging.getLogger(__name__)
 
 # ══════════════════════════════════════════════════════════════════
 # 下载响应头：中文文件名
@@ -71,6 +75,113 @@ def parse_inline(text: str) -> str:
 
 # 保持与历史公开名一致（测试与旧调用点使用下划线前缀）
 _parse_inline = parse_inline
+
+
+# ══════════════════════════════════════════════════════════════════
+# 公式：LaTeX → MathML → OMML（Word 原生公式）
+# ══════════════════════════════════════════════════════════════════
+
+# MML2OMML.XSL 是 Office 自带的 MathML→OMML 转换表。用它可以把公式写成 Word
+# **原生公式**（可编辑、可编号、随文排版），而不是 LaTeX 源码文本。
+# 找不到该文件或任一环节失败时，公式回落为文本降级，绝不阻断导出。
+_XSL_CANDIDATES = (
+    r"C:\Program Files\Microsoft Office\root\OfficeXX\MML2OMML.XSL",
+    r"C:\Program Files (x86)\Microsoft Office\root\OfficeXX\MML2OMML.XSL",
+    r"C:\Program Files\Microsoft Office\OfficeXX\MML2OMML.XSL",
+)
+
+
+def _find_mml2omml_xsl() -> str | None:
+    """定位 MML2OMML.XSL：优先环境变量 MML2OMML_XSL，其次 Office 常见安装路径。"""
+    import os
+    from pathlib import Path as _Path
+
+    env = os.getenv("MML2OMML_XSL")
+    if env and _Path(env).exists():
+        return env
+    for pattern in _XSL_CANDIDATES:
+        for ver in ("16", "15", ""):
+            candidate = pattern.replace("XX", ver)
+            if _Path(candidate).exists():
+                return candidate
+    for base in (
+        r"C:\Program Files\Microsoft Office",
+        r"C:\Program Files (x86)\Microsoft Office",
+    ):
+        root = _Path(base)
+        if root.exists():
+            for found in root.rglob("MML2OMML.XSL"):
+                return str(found)
+    return None
+
+
+_XSLT_CACHE: dict = {"transform": None, "tried": False}
+
+
+def _get_xslt():
+    """惰性加载并缓存 XSLT 变换对象（XSL 近 200 KB，不能每个公式重新解析）。"""
+    if _XSLT_CACHE["tried"]:
+        return _XSLT_CACHE["transform"]
+    _XSLT_CACHE["tried"] = True
+    path = _find_mml2omml_xsl()
+    if not path:
+        logger.info("未找到 MML2OMML.XSL，Word 导出的公式将回落为文本")
+        return None
+    try:
+        from lxml import etree
+
+        _XSLT_CACHE["transform"] = etree.XSLT(etree.parse(path))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("加载 MML2OMML.XSL 失败（公式回落为文本）: %s", exc)
+        _XSLT_CACHE["transform"] = None
+    return _XSLT_CACHE["transform"]
+
+
+@lru_cache(maxsize=512)
+def latex_to_omml(latex: str) -> str | None:
+    """LaTeX → OMML（Word 原生公式）。任一环节不可用返回 None，由调用方降级。
+
+    链路：`latex2mathml` 转 MathML → Office 的 MML2OMML.XSL 转 OMML。
+    两个依赖都是可选的，缺失时静默降级。
+    """
+    text = (latex or "").strip()
+    if not text:
+        return None
+    transform = _get_xslt()
+    if transform is None:
+        return None
+    try:
+        import latex2mathml.converter as conv
+        from lxml import etree
+
+        mathml = conv.convert(text)
+        omml = str(transform(etree.fromstring(mathml.encode("utf-8"))))
+    except Exception as exc:  # noqa: BLE001 — 公式转换失败不该阻断导出
+        logger.debug("LaTeX → OMML 失败（%s）: %s", text[:40], exc)
+        return None
+    for prefix in ('<?xml version="1.0"?>', "<?xml version='1.0'?>"):
+        if omml.startswith(prefix):
+            omml = omml[len(prefix) :]
+    omml = omml.strip()
+    return omml if "<m:oMath" in omml else None
+
+
+def insert_omml_paragraph(doc, latex: str) -> bool:
+    """把 LaTeX 公式作为**居中的 Word 原生公式**插入段落；不可用时返回 False。"""
+    omml = latex_to_omml(latex)
+    if not omml:
+        return False
+    try:
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        from docx.oxml import parse_xml
+
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p._p.append(parse_xml(omml))
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("OMML 注入 docx 失败: %s", exc)
+        return False
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -189,6 +300,17 @@ def markdown_to_docx(
                         continue
                 except Exception:  # noqa: BLE001 — 插图失败不阻断导出
                     pass
+
+        # 独立公式块 $$...$$ → Word 原生公式（OMML）；不可用时落到后面的文本降级
+        formula_line = line.strip()
+        if (
+            formula_line.startswith("$$")
+            and formula_line.endswith("$$")
+            and len(formula_line) > 4
+        ):
+            if insert_omml_paragraph(doc, formula_line[2:-2].strip()):
+                i += 1
+                continue
 
         # 表格（连续 | 行聚合成一个 docx table）
         if _TABLE_ROW_RE.match(line):

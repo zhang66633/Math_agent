@@ -43,8 +43,9 @@ dependencies = [
 
 # 可选能力（代码侧全部惰性 import，缺失时功能降级并给出安装提示）：
 #   ocr    — 扫描版 PDF OCR（rapidocr）与 PDF 页渲染（pymupdf）、PyPDF2 兜底解析
-#   search — DuckDuckGo 联网搜索工具
-# 一键安装默认带上：pip install -e "backend[ocr,search]"
+#   search — 联网搜索（ddgs；主通道是内置的 cn.bing.com，无需该依赖也可用）
+#   export — DOCX 里的 Word 原生公式（LaTeX → MathML → OMML）
+# 一键安装默认带上：pip install -e "backend[ocr,search,export]"
 # 已移除的死依赖：pytesseract / pdf2image（代码改走 rapidocr+pymupdf 后无人 import）
 [project.optional-dependencies]
 ocr = [
@@ -55,7 +56,15 @@ ocr = [
     "PyPDF2>=3.0.0",
 ]
 search = [
-    "duckduckgo-search>=6.0.0",
+    # duckduckgo-search 已改名 ddgs：旧包 8.x 走 bing 后端且实测直接返回 None。
+    # 注意 ddgs 走境外服务，受限网络下会超时，因此搜索工具以 cn.bing.com 为主通道。
+    "ddgs>=9.0.0",
+]
+export = [
+    # 公式链路：latex2mathml 转 MathML，再经 Office 自带的 MML2OMML.XSL 转 OMML。
+    # 两者或 XSL 任一缺失时，导出自动降级为可读文本，不抛错。
+    "latex2mathml>=3.0.0",
+    "lxml>=5.0.0",
 ]
 dev = [
     "pytest>=8.0.0",

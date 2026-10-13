@@ -50,6 +50,25 @@
               </div>
             </li>
           </ol>
+
+          <!-- 本题装配的技能（技能系统）：按题型自动加载的建模规范，只读展示 -->
+          <div v-if="skills.length" class="mt-3 border-t border-border pt-2.5">
+            <p class="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+              <Sparkles class="h-3 w-3" />
+              § 装配技能
+              <span class="font-sans normal-case tracking-normal">（按题型自动加载）</span>
+            </p>
+            <div class="mt-1.5 flex flex-wrap gap-1.5">
+              <Badge
+                v-for="name in skills"
+                :key="name"
+                variant="muted"
+                class="font-mono text-[10px]"
+              >
+                {{ name }}
+              </Badge>
+            </div>
+          </div>
         </div>
       </CollapsibleContent>
     </Collapsible>
@@ -63,7 +82,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Check, ChevronDown, Loader2, Minus } from "lucide-vue-next";
+import { Check, ChevronDown, Loader2, Minus, Sparkles } from "lucide-vue-next";
 import { computed, ref, watch } from "vue";
 
 export interface ProgressStep {
@@ -80,8 +99,10 @@ const props = withDefaults(
     running?: boolean;
     completed?: boolean;
     wsStatus?: string;
+    /** 本题装配的技能名（技能系统）；空数组时不渲染该区块 */
+    skills?: string[];
   }>(),
-  { open: true, running: false, completed: false },
+  { open: true, running: false, completed: false, skills: () => [] },
 );
 
 const emit = defineEmits<{ toggle: [] }>();

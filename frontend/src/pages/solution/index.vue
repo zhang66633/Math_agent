@@ -28,6 +28,7 @@
           :running="taskStore.isRunning"
           :completed="taskStore.completed"
           :ws-status="taskStore.wsStatus"
+          :skills="taskStore.planSkills"
           :open="true"
           @toggle="rightPanelOpen = !rightPanelOpen"
         />

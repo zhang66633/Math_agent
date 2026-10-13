@@ -10,6 +10,8 @@ interface WsEventData {
   plan?: string[];
   step_count?: number;
   reasons?: Record<string, string>;
+  /** 本题装配的技能目录（技能系统：plan 事件按题型解析出的技能名，供时间线展示） */
+  skills?: string[];
   stage?: string;
   title?: string;
   summary?: string;
@@ -86,6 +88,8 @@ export const useTaskStore = defineStore("task", () => {
   const planSteps = ref<string[]>([]);
   // 计划步骤 → 理由（v2.2：planner 输出 [{step, reason}]，时间线按真实理由展示"方案思考"）
   const planReasons = ref<Record<string, string>>({});
+  // 本题装配的技能目录（技能系统 v1：plan 事件按题型解析，时间线展示"自动加载了哪些技能"）
+  const planSkills = ref<string[]>([]);
   // 每任务已处理的最大事件序号（协议 v2.2）：WS 实时事件 vs REST 回放竞态
   // 双apply 的幂等依据；重连后按 after=lastSeq 增量补拉断线期间丢失的事件
   const lastSeqByTask: Record<string, number> = {};
@@ -210,6 +214,10 @@ export const useTaskStore = defineStore("task", () => {
         : [];
       if (plan.length) planSteps.value = plan;
       planReasons.value = (data.data?.reasons as Record<string, string>) ?? {};
+      // 技能系统 v1：本轮按题型装配的技能目录；旧任务的事件里没有该字段，保持空数组
+      planSkills.value = Array.isArray(data.data?.skills)
+        ? data.data.skills
+        : [];
       // plan 事件即"计划制定"步骤完成（该节点不发 node_end）
       nodeStates.value = {
         ...nodeStates.value,
@@ -266,6 +274,7 @@ export const useTaskStore = defineStore("task", () => {
       const events: WsEvent[] = data?.events ?? [];
       planSteps.value = [];
       planReasons.value = {};
+      planSkills.value = [];
       nodeStates.value = {};
       rollbackInfo.value = null;
       let sawTaskEnd = false;
@@ -736,6 +745,7 @@ export const useTaskStore = defineStore("task", () => {
     sectionsDone,
     planSteps,
     planReasons,
+    planSkills,
     nodeStates,
     rollbackInfo,
     currentTaskId,

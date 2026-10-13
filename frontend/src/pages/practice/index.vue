@@ -4,13 +4,13 @@
     <!-- 主区 -->
     <div class="flex h-full flex-col min-w-0">
       <!-- 顶部 -->
-      <div class="flex items-center justify-between border-b px-6 py-3 shrink-0">
+      <div class="flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b px-6 py-3">
         <div class="flex items-center gap-3">
           <span class="font-display text-lg font-medium">训练场</span>
           <span class="font-mono text-[10px] text-muted-foreground">· 选择题题库</span>
         </div>
-        <!-- 统计条(力扣风格) -->
-        <div v-if="!inSession && !sessionDone" class="flex items-center gap-4 font-mono text-[11px] text-muted-foreground">
+        <!-- 统计条(力扣风格) — 窄屏（右侧助手面板拉宽后）允许换行，不把顶栏撑出横向滚动 -->
+        <div v-if="!inSession && !sessionDone" class="flex shrink-0 flex-wrap items-center justify-end gap-x-4 gap-y-1 font-mono text-[11px] text-muted-foreground">
           <span>总题数 <strong class="text-foreground">{{ bankTotal }}</strong></span>
           <span>未做 <strong class="text-foreground">{{ statusCounts.untried }}</strong></span>
           <span>错题 <strong class="text-red-500">{{ statusCounts.wrong }}</strong></span>
@@ -69,7 +69,10 @@
         </div>
 
         <!-- 题目列表(力扣紧凑表格) -->
-        <div class="flex-1 overflow-y-auto min-h-0">
+        <!-- overflow-x-hidden + table-fixed：题目列吸收剩余宽度并在单元格内截断，
+             公式再长也不会把表格撑出横向滚动条（旧实现 auto 布局按 max-content 撑宽，
+             操作列被推到屏幕外，要横向拖动才能点） -->
+        <div class="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
           <div v-if="store.bankLoading" class="space-y-2 p-4">
             <Skeleton v-for="i in 8" :key="i" class="h-8" :class="i % 3 === 0 ? 'w-11/12' : 'w-full'" />
           </div>
@@ -88,19 +91,19 @@
             <span>暂无符合条件的题目</span>
             <span class="text-xs">试试调整筛选条件</span>
           </div>
-          <table v-else class="w-full text-sm">
+          <table v-else class="w-full table-fixed text-sm">
             <thead class="sticky top-0 bg-background z-10">
               <tr class="border-b text-left text-xs text-muted-foreground">
                 <th class="w-10 px-3 py-2">
                   <input type="checkbox" :checked="allSelected" @change="store.selectAll()" class="accent-primary" />
                 </th>
                 <th class="w-10 px-2 py-2">状态</th>
-                <th class="w-14 px-2 py-2">题号</th>
+                <th class="w-16 px-2 py-2">题号</th>
                 <th class="px-2 py-2">题目</th>
-                <th class="w-24 px-2 py-2">类别</th>
-                <th class="w-20 px-2 py-2">难度</th>
-                <th class="w-16 px-2 py-2 text-right">错次</th>
-                <th class="w-20 px-2 py-2 text-right">错题本</th>
+                <th class="hidden w-24 px-2 py-2 sm:table-cell">类别</th>
+                <th class="w-16 px-2 py-2">难度</th>
+                <th class="w-14 px-2 py-2 text-right">错次</th>
+                <th class="w-24 px-2 py-2 text-right">错题本</th>
               </tr>
             </thead>
             <tbody>
@@ -120,15 +123,20 @@
                 </td>
                 <td class="px-2 py-2 font-mono text-xs text-muted-foreground">{{ q.no }}</td>
                 <td class="px-2 py-2">
+                  <!-- 截断必须落在真正装文字的 <p> 上，否则省略号画不出来
+                       （父元素 overflow:hidden 只裁切、不画 "…"） -->
                   <div
-                    class="truncate text-xs prose prose-sm prose-gray dark:prose-invert max-w-none [&>p]:m-0"
+                    class="truncate text-xs prose prose-sm prose-gray dark:prose-invert max-w-none [&>p]:m-0 [&>p]:truncate"
+                    :title="plainPreview(q.question)"
                     v-html="renderMarkdown(q.question)"
                   />
                   <div class="mt-0.5 flex gap-1 flex-wrap">
                     <span v-for="t in q.tags.slice(0, 3)" :key="t" class="rounded bg-muted px-1 py-px text-[10px] text-muted-foreground">{{ t }}</span>
                   </div>
                 </td>
-                <td class="px-2 py-2 text-xs text-muted-foreground">{{ q.category }}</td>
+                <td class="hidden px-2 py-2 text-xs text-muted-foreground sm:table-cell">
+                  <span class="block truncate" :title="q.category">{{ q.category }}</span>
+                </td>
                 <td class="px-2 py-2">
                   <span class="rounded px-1.5 py-px text-[10px] font-medium" :class="diffBadgeClass(q.difficulty)">
                     {{ diffLabel(q.difficulty) }}
@@ -137,7 +145,7 @@
                 <td class="px-2 py-2 text-right font-mono text-xs" :class="q.wrong_times > 0 ? 'text-red-500' : 'text-muted-foreground/40'">
                   {{ q.wrong_times || "—" }}
                 </td>
-                <td class="px-2 py-2 text-right" @click.stop>
+                <td class="px-2 py-2 text-right whitespace-nowrap" @click.stop>
                   <button
                     class="rounded border px-1.5 py-0.5 text-[10px] transition-colors"
                     :class="q.status === 'wrong'
@@ -172,7 +180,8 @@
       </div>
 
       <!-- ══════ 错题本视图 ══════ -->
-      <div v-else-if="!inSession && !sessionDone && activeTab === 'mistakes'" class="flex-1 overflow-y-auto min-h-0">
+      <!-- 卡片列表而非表格：题目列不再按 max-content 撑宽，操作按钮常驻右侧可见 -->
+      <div v-else-if="!inSession && !sessionDone && activeTab === 'mistakes'" class="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
         <div v-if="store.mistakesLoading" class="space-y-2 p-4">
           <Skeleton v-for="i in 6" :key="i" class="h-8" :class="i % 3 === 0 ? 'w-11/12' : 'w-full'" />
         </div>
@@ -181,48 +190,57 @@
           <span class="text-sm">错题本已清空</span>
           <span class="text-xs">做错的题会出现在这里,重做正确后自动移除</span>
         </div>
-        <table v-else class="w-full text-sm">
-          <thead class="sticky top-0 bg-background z-10">
-            <tr class="border-b text-left text-xs text-muted-foreground">
-              <th class="w-14 px-3 py-2">题号</th>
-              <th class="px-2 py-2">题目</th>
-              <th class="w-24 px-2 py-2">类别</th>
-              <th class="w-20 px-2 py-2">难度</th>
-              <th class="w-16 px-2 py-2 text-right">错次</th>
-              <th class="w-20 px-2 py-2"></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="q in mistakes" :key="q.id" class="border-b border-border/50 hover:bg-accent/50">
-              <td class="px-3 py-2 font-mono text-xs text-muted-foreground">{{ q.no }}</td>
-              <td class="px-2 py-2">
+        <template v-else>
+          <div class="flex items-center justify-between border-b bg-muted/20 px-5 py-2 text-[11px] text-muted-foreground">
+            <span>共 <strong class="text-foreground">{{ mistakes.length }}</strong> 道待征服</span>
+            <span class="font-mono">错次 = 累计答错次数</span>
+          </div>
+          <ul class="divide-y divide-border/60">
+            <li
+              v-for="q in mistakes"
+              :key="q.id"
+              class="flex items-start gap-3 px-5 py-3 transition-colors hover:bg-accent/40"
+            >
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+                  <span class="font-mono">#{{ q.no }}</span>
+                  <span>{{ q.category }}</span>
+                  <span class="rounded px-1.5 py-px text-[10px] font-medium" :class="diffBadgeClass(q.difficulty)">
+                    {{ diffLabel(q.difficulty) }}
+                  </span>
+                  <span class="font-mono text-red-500">错 {{ q.wrong_times }} 次</span>
+                </div>
                 <div
-                  class="truncate text-xs prose prose-sm prose-gray dark:prose-invert max-w-none [&>p]:m-0"
+                  class="mt-1 max-h-[5.2rem] overflow-hidden text-sm prose prose-sm prose-gray dark:prose-invert max-w-none [&>p]:m-0"
+                  :title="plainPreview(q.question)"
                   v-html="renderMarkdown(q.question)"
                 />
-              </td>
-              <td class="px-2 py-2 text-xs text-muted-foreground">{{ q.category }}</td>
-              <td class="px-2 py-2">
-                <span class="rounded px-1.5 py-px text-[10px] font-medium" :class="diffBadgeClass(q.difficulty)">
-                  {{ diffLabel(q.difficulty) }}
-                </span>
-              </td>
-              <td class="px-2 py-2 text-right font-mono text-xs text-red-500">{{ q.wrong_times }}</td>
-              <td class="px-2 py-2 text-right whitespace-nowrap">
-                <button class="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent transition-colors" @click="redoMistake(q)">
+                <div v-if="q.tags.length" class="mt-1 flex flex-wrap gap-1">
+                  <span v-for="t in q.tags.slice(0, 4)" :key="t" class="rounded bg-muted px-1 py-px text-[10px] text-muted-foreground">{{ t }}</span>
+                </div>
+              </div>
+              <div class="flex shrink-0 items-center gap-1.5 pt-0.5">
+                <button
+                  class="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent transition-colors"
+                  @click="redoMistake(q)"
+                >
                   重做
                 </button>
-                <button class="ml-1.5 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent transition-colors" title="不重做,直接移出错题本" @click="store.removeMistake(q)">
+                <button
+                  class="rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent transition-colors"
+                  title="不重做,直接移出错题本"
+                  @click="store.removeMistake(q)"
+                >
                   移除
                 </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+              </div>
+            </li>
+          </ul>
+        </template>
       </div>
 
       <!-- ══════ 答题视图 ══════ -->
-      <div v-else-if="inSession" class="flex-1 overflow-y-auto min-h-0">
+      <div v-else-if="inSession" class="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
         <div class="mx-auto max-w-3xl px-6 py-6">
           <!-- 进度 -->
           <div class="mb-4 flex items-center justify-between text-xs text-muted-foreground">
@@ -311,7 +329,7 @@
       </div>
 
       <!-- ══════ 结算视图 ══════ -->
-      <div v-else-if="sessionDone" class="flex-1 overflow-y-auto min-h-0">
+      <div v-else-if="sessionDone" class="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
         <div class="mx-auto max-w-3xl px-6 py-8">
           <div class="mb-6 flex items-center gap-6 rounded-md border border-border bg-card p-5">
             <div class="text-center">
@@ -329,12 +347,12 @@
           </div>
 
           <p class="mb-3 font-display text-base font-medium">本次作答记录</p>
-          <table class="w-full text-sm">
+          <table class="w-full table-fixed text-sm">
             <thead>
               <tr class="border-b text-left text-xs text-muted-foreground">
                 <th class="w-14 px-2 py-2">题号</th>
                 <th class="px-2 py-2">题目</th>
-                <th class="w-20 px-2 py-2">状态</th>
+                <th class="w-24 px-2 py-2">状态</th>
                 <th class="w-24 px-2 py-2">类别</th>
               </tr>
             </thead>
@@ -343,7 +361,8 @@
                 <td class="px-2 py-2 font-mono text-xs text-muted-foreground">{{ a.question.no }}</td>
                 <td class="px-2 py-2">
                   <div
-                    class="truncate text-xs prose prose-sm prose-gray dark:prose-invert max-w-none [&>p]:m-0"
+                    class="truncate text-xs prose prose-sm prose-gray dark:prose-invert max-w-none [&>p]:m-0 [&>p]:truncate"
+                    :title="plainPreview(a.question.question)"
                     v-html="renderMarkdown(a.question.question)"
                   />
                 </td>
@@ -421,6 +440,7 @@ import { useStreamChat } from "@/composables/useStreamChat";
 import { useChatSessionStore } from "@/stores/chatSession";
 import { usePracticeStore } from "@/stores/practice";
 import { renderMarkdown } from "@/utils/markdown";
+import { plainPreview } from "@/utils/text";
 import {
   AlertTriangle,
   BookOpen,

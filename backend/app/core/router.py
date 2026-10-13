@@ -1,20 +1,13 @@
 """动态路由逻辑 - plan_execution → first_agent, agent → next_agent/format_response."""
 
+from .agent_registry import agent_node_map
 from .state import AgentState
 
-# ── plan 步骤名 → 图节点名（单一真源）────────────────────────────────
-# workflow.py 的节点注册与条件边映射、route_to_first_agent、
-# after_agent_router 共用这一张表——加/改 agent 只改这一处，
-# 不再有三份手抄 node_map 各自漂移的风险。
-AGENT_NODES: dict[str, str] = {
-    "analysis": "analysis_agent",
-    "modeling": "modeling_agent",
-    "data_preprocessing": "data_preprocessing_agent",
-    "solving": "solving_agent",
-    "verification": "verification_agent",
-    "export_results": "export_results_agent",
-    "writing": "writing_agent",
-}
+# ── plan 步骤名 → 图节点名 ──────────────────────────────────────────
+# 唯一真源是 core/agent_registry.yaml（agent 定义外置，参考 DSH dsh-agent-preset）。
+# workflow.py 的节点注册与条件边映射、route_to_first_agent、after_agent_router
+# 全部共用这一张派生表——加/改 agent 只改 YAML，不再有手抄映射表漂移的风险。
+AGENT_NODES: dict[str, str] = agent_node_map()
 
 
 def route_to_first_agent(state: AgentState) -> str:

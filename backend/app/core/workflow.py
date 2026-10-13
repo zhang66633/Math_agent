@@ -29,32 +29,19 @@
 
 from langgraph.graph import END, START, StateGraph
 
+from .agent_registry import agent_node_functions
 from .nodes import (
-    analysis_agent_node,
     classify_problem,
-    data_preprocessing_agent_node,
-    export_results_agent_node,
     format_response,
-    modeling_agent_node,
     plan_execution,
     retrieve_knowledge,
-    solving_agent_node,
-    verification_agent_node,
-    writing_agent_node,
 )
 from .router import AGENT_NODES, after_agent_router, route_to_first_agent
 from .state import AgentState
 
-# 节点函数注册表：节点名 → 函数（与 AGENT_NODES 的节点名一一对应）
-_AGENT_NODE_FNS = {
-    "analysis_agent": analysis_agent_node,
-    "modeling_agent": modeling_agent_node,
-    "data_preprocessing_agent": data_preprocessing_agent_node,
-    "solving_agent": solving_agent_node,
-    "verification_agent": verification_agent_node,
-    "export_results_agent": export_results_agent_node,
-    "writing_agent": writing_agent_node,
-}
+# 节点函数由注册表动态装载（core/agent_registry.yaml 的 entry 字段声明「模块:属性」）。
+# 加 agent 只需写一个节点模块 + 在 YAML 里加一条，不必改本文件。
+_AGENT_NODE_FNS = agent_node_functions()
 
 
 def build_orchestrator() -> StateGraph:

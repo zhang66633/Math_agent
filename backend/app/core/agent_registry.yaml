@@ -1,0 +1,84 @@
+# Agent 注册表 —— agent 定义的唯一真源。
+#
+# 代码侧由此派生（不再手抄多份映射表）：
+#   - core/router.py 的 AGENT_NODES（计划步骤名 -> 图节点名）
+#   - core/workflow.py 的节点函数装载（按 entry 动态 import）与条件边目标
+#   - 各 agent 节点的角色模型键、技能装配开关与工具绑定
+#
+# 字段说明：
+#   id           planner 输出的步骤名（execution_plan / rollback_target 使用的值）
+#   node         LangGraph 图节点名
+#   label        中文显示名（前端时间线展示）
+#   entry        节点函数位置，'模块:属性'；模块无法导入或属性不可调用时启动即失败
+#   model_role   LLMFactory 的角色键（决定用哪套模型配置；null = 该节点不调用 LLM）
+#   skills       是否装配技能系统（app/skills），默认 false
+#   uses_tools   是否给该节点绑定工具集
+#   rollback     是否允许被验证环节回退重做
+#
+# 加/改 agent 只改本文件；tests/test_agent_registry.py 守护它与图节点注册一致。
+
+version: 1
+
+agents:
+  - id: analysis
+    node: analysis_agent
+    label: 分析师
+    entry: app.core.agents.analysis:analysis_agent_node
+    model_role: analysis
+    skills: true
+    uses_tools: false
+    rollback: true
+
+  - id: modeling
+    node: modeling_agent
+    label: 建模师
+    entry: app.core.agents.modeling:modeling_agent_node
+    model_role: modeling
+    skills: true
+    uses_tools: false
+    rollback: true
+
+  - id: data_preprocessing
+    node: data_preprocessing_agent
+    label: 数据预处理
+    entry: app.core.agents.data_preprocessing:data_preprocessing_agent_node
+    model_role: solving
+    skills: false
+    uses_tools: true
+    rollback: false
+
+  - id: solving
+    node: solving_agent
+    label: 求解器
+    entry: app.core.agents.solving:solving_agent_node
+    model_role: solving
+    skills: false
+    uses_tools: true
+    rollback: true
+
+  - id: verification
+    node: verification_agent
+    label: 检验员
+    entry: app.core.agents.verification:verification_agent_node
+    model_role: verification
+    skills: true
+    uses_tools: false
+    rollback: false
+
+  - id: export_results
+    node: export_results_agent
+    label: 结果导出
+    entry: app.core.agents.export_results:export_results_agent_node
+    model_role: null
+    skills: false
+    uses_tools: false
+    rollback: false
+
+  - id: writing
+    node: writing_agent
+    label: 编辑
+    entry: app.core.agents.writing:writing_agent_node
+    model_role: writing
+    skills: true
+    uses_tools: false
+    rollback: false

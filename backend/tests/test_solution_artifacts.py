@@ -20,6 +20,7 @@ from app.core.node_helpers import (
     _collect_file_urls,
     _collect_image_urls,
     count_paper_structure,
+    dedupe_repeated_image_refs,
     resolve_task_media_path,
     strip_missing_image_refs,
 )
@@ -170,3 +171,197 @@ def test_docx_export_has_no_raw_image_markdown_after_strip():
     assert "图 4.1" not in clean_text
     assert "正文。" in clean_text
     assert "结尾。" in clean_text
+
+
+def test_dedupe_keeps_duplicate_when_following_text_cites_other_number():
+    """图**后面**那段正文引用了与首次出现不同的编号 → 保留。
+
+    实测 d20f5bee：重复出现的影子价格图，其后一段正文写着
+    "图 4.1 中，$y_1^*$（蓝线）…"，而该图首次出现的图注编号是 4.4。
+    删掉图会让这句话指向前面的"可行域图"——错误引用比重复插图更糟。
+    """
+    md = "\n".join(
+        [
+            "## 四、结果分析",
+            "影子价格随 $b_1$ 分段变化如图 4.4 所示。",
+            f"![图4.4 影子价格]({_URL_A})",
+            "图 4.4：影子价格分段图。",
+            "",
+            "## 五、检验",
+            "该区间与 4.4 一致。",
+            f"![图4 影子价格]({_URL_A})",
+            "图 4.1：影子价格随 $b_1$ 的分段变化。",
+            "图 4.1 中，$y_1^*$（蓝线）与 $y_2^*$（红线）在阴影区间内保持水平。",
+            "",
+        ]
+    )
+    cleaned, dropped = dedupe_repeated_image_refs(md)
+    assert dropped == []
+    assert cleaned == md
+
+
+def test_dedupe_removes_when_window_cites_same_number():
+    """前后文引用的都是首次出现处的编号 → 删除重复插图。"""
+    md = "\n".join(
+        [
+            "## 四、结果分析",
+            "灵敏度曲线如图 4.2 所示。",
+            f"![图4.2 灵敏度]({_URL_A})",
+            "图 4.2：灵敏度曲线。",
+            "",
+            "## 五、检验",
+            "由图 4.2 可得如下结论：",
+            f"![图4.2 灵敏度]({_URL_A})",
+            "图 4.2：灵敏度曲线（重复）。",
+            "结论段落。",
+            "",
+        ]
+    )
+    cleaned, dropped = dedupe_repeated_image_refs(md)
+    assert dropped == [_URL_A]
+    assert cleaned.count(_URL_A) == 1
+    assert "结论段落。" in cleaned
+    assert "由图 4.2 可得如下结论：" in cleaned
+
+
+def test_dedupe_handles_bold_wrapped_captions():
+    """加粗图注（`**图 4.2：…**`）也算编号图注。
+
+    实测 222e0839：首次出现的图注被 `**…**` 包着，早期正则不认这个前缀，
+    于是"首次编号 = None"→ 重复插图被整篇保留（体检脚本发现的漏删）。
+    """
+    md = "\n".join(
+        [
+            "## 四、模型求解",
+            "整数可行点分布如图 4.2 所示。",
+            f"![图2 整数规划]({_URL_A})",
+            "",
+            "**图 4.2：整数可行点分布与 ILP 最优解**",
+            "",
+            "## 五、检验",
+            "再次对照图 4.2。",
+            f"![图2 整数规划]({_URL_A})",
+            "",
+            "图 4.2：整数可行点分布与 ILP 最优解",
+            "",
+        ]
+    )
+    cleaned, dropped = dedupe_repeated_image_refs(md)
+    assert dropped == [_URL_A]
+    assert cleaned.count(_URL_A) == 1
+    # 首次出现的加粗图注保留
+    assert "**图 4.2：整数可行点分布与 ILP 最优解**" in cleaned
+
+
+# ── 重复图片引用去重（实测 d20f5bee：7 处引用只对应 4 张图）──────────────
+
+_URL_A = "/api/task_files/t/figure_1--aaaa.png"
+_URL_B = "/api/task_files/t/figure_2--bbbb.png"
+
+
+def _paper_with_duplicate() -> str:
+    """复刻实测论文的形态：同一张图在后面的章节被再插一次，
+    两次都带同号图注，后续章节的正文用「如图 4.1 所示」显式引用。"""
+    return "\n".join(
+        [
+            "## 四、结果分析",
+            "",
+            "灵敏度曲线如图 4.1 所示。",
+            "",
+            f"![图4.1 灵敏度曲线]({_URL_A})",
+            "",
+            "图 4.1：灵敏度曲线。",
+            "",
+            "## 五、模型评价",
+            "",
+            "该图再次说明了灵敏度特征。",
+            "",
+            f"![图4.1 灵敏度曲线]({_URL_A})",
+            "",
+            "图 4.1：灵敏度曲线（重复插图）。",
+            "",
+            "结尾段落。",
+        ]
+    )
+
+
+def test_dedupe_removes_later_occurrence_with_caption():
+    """首次出现保留；后续重复（连图注）删除，正文其余内容完好。"""
+    cleaned, dropped = dedupe_repeated_image_refs(_paper_with_duplicate())
+
+    assert dropped == [_URL_A]
+    # 同一张图在全文只剩一处引用
+    assert cleaned.count(_URL_A) == 1
+    assert "图 4.1：灵敏度曲线（重复插图）" not in cleaned
+    # 首次出现的图注与两侧正文都保留
+    assert "图 4.1：灵敏度曲线。" in cleaned
+    assert "灵敏度曲线如图 4.1 所示。" in cleaned
+    assert "该图再次说明了灵敏度特征。" in cleaned
+    assert "结尾段落。" in cleaned
+
+
+def test_dedupe_does_not_leave_double_blank_lines():
+    """删除后不应在原文位置留下连续空行（版面上就是多余的空白）。"""
+    cleaned, _ = dedupe_repeated_image_refs(_paper_with_duplicate())
+    assert "\n\n\n" not in cleaned
+
+
+def test_dedupe_keeps_duplicate_when_reference_is_vague():
+    """正文只有「如下图所示」这种无编号指代 → 保留，避免悬空引用。"""
+    md = "\n".join(
+        [
+            "## 一",
+            "结果如下图所示。",
+            f"![图]({_URL_A})",
+            "",
+            "## 二",
+            "再如下图所示。",
+            f"![图]({_URL_A})",
+            "",
+        ]
+    )
+    cleaned, dropped = dedupe_repeated_image_refs(md)
+    assert dropped == []
+    assert cleaned.count(_URL_A) == 2
+    assert cleaned == md
+
+
+def test_dedupe_keeps_duplicate_when_first_occurrence_has_no_caption():
+    """首次出现处没有编号图注（正文却引用了编号）→ 保留，避免读者找不到图。"""
+    md = "\n".join(
+        [
+            "## 一",
+            f"![裸图]({_URL_A})",
+            "",
+            "## 二",
+            "详见图 2.1。",
+            f"![图2.1 x]({_URL_A})",
+            "",
+            "图 2.1：说明。",
+            "",
+        ]
+    )
+    cleaned, dropped = dedupe_repeated_image_refs(md)
+    assert dropped == []
+    assert cleaned == md
+
+
+def test_dedupe_keeps_distinct_images_and_is_noop():
+    md = "\n".join(
+        [
+            "## 一",
+            f"![图1]({_URL_A})",
+            "",
+            "图 1：A。",
+            "",
+            f"![图2]({_URL_B})",
+            "",
+            "图 2：B。",
+            "",
+        ]
+    )
+    cleaned, dropped = dedupe_repeated_image_refs(md)
+    assert dropped == []
+    assert cleaned == md
+    assert dedupe_repeated_image_refs("") == ("", [])
+

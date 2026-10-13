@@ -34,9 +34,15 @@ const sectionCount = computed(
   () => (props.markdown.match(/^##\s+\S/gm) ?? []).length,
 );
 
-/** 正文引用的图表数（Markdown 图片语法） */
+/** 正文引用的图表数（Markdown 图片语法，按 URL 去重——
+ *  右栏交付物面板列的也是文件数，两处要对得上） */
 const figureCount = computed(
-  () => (props.markdown.match(/!\[[^\]]*\]\([^)]*\)/g) ?? []).length,
+  () =>
+    new Set(
+      (props.markdown.match(/!\[[^\]]*\]\(([^)]*)\)/g) ?? []).map((s) =>
+        s.replace(/^!\[[^\]]*\]\(|\)$/g, ""),
+      ),
+    ).size,
 );
 </script>
 

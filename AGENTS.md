@@ -23,6 +23,11 @@ pnpm typecheck                      # vue-tsc --noEmit
 pnpm lint                           # biome check src
 ```
 
+> ⚠️ **改源码不要过 PowerShell 文本 cmdlet**（`Get-Content -Raw` + `-replace` +
+> `Set-Content`）：中文注释会当场变成乱码——`frontend/vite.config.ts` 里那堆乱码
+> 就是这么来的（2026-10-13 又在 `core/node_helpers.py` 上复现一次，靠 `git checkout`
+> 回滚）。源码一律用编辑工具改；必须脚本化时用 Python 并显式 `encoding="utf-8"`。
+
 ## 提交规范
 
 `type: 中文描述`（feat/fix/chore/docs/refactor）。直接推 main，先 pull 再 push；禁止 force-push / rebase。

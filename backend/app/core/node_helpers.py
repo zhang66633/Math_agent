@@ -282,8 +282,9 @@ def resolve_task_media_path(url: str) -> Path | None:
 
 # 独立成行的图片引用（与 md_docx 的插图判定同一形态）
 _MD_IMAGE_LINE_RE = re.compile(r"^!\[[^\]]*\]\((/api/(?:task_files|images)/[^)\s]+)\)$")
-# 图注行：`图 4.1：…` / `Figure 3 …`
-_FIGURE_CAPTION_RE = re.compile(r"^\s*(?:图|figure)\s*\d", re.IGNORECASE)
+# 图注行：`图 4.1：…` / `**图 4.1：…**` / `Figure 3 …`
+# （加粗包裹是真实数据里出现过的形态，必须容忍，否则图注会被当成正文）
+_FIGURE_CAPTION_RE = re.compile(r"^\s*[*_]{0,3}\s*(?:图|figure)\s*\d", re.IGNORECASE)
 
 
 def strip_missing_image_refs(markdown: str) -> tuple[str, list[str]]:
@@ -334,13 +335,137 @@ def count_paper_structure(markdown: str) -> tuple[int, int]:
     实测 E2E 任务 d20f5bee 的论文是 `## × 9 + ### × 41`，两者相加就成了
     「50 章」——数字看着不难看，但是**错的**，而错的数字比没有数字更糟。
     一级标题是论文题目本身，同样不计。
+
+    图片数按 URL **去重**后统计：读者问"论文里有几张图"指的是有几张，
+    而右栏交付物面板列的也是文件数，两处必须是同一个数才对得上。
     """
     if not markdown:
         return 0, 0
     sections = len(re.findall(r"^##\s+\S", markdown, flags=re.MULTILINE))
-    figures = len(re.findall(r"!\[[^\]]*\]\([^)]*\)", markdown))
+    figures = len(set(re.findall(r"!\[[^\]]*\]\(([^)]*)\)", markdown)))
     return sections, figures
 
+
+# 正文里对图的编号引用：图 4.2 / 图4.2 / Figure 3，允许被 `**…**` 加粗包裹
+# （实测 222e0839 首次出现的图注就是 `**图 4.2：整数可行点分布**`，
+#   不容忍加粗前缀会把"首次出现"误判成"没有编号"，从而漏删重复插图）
+_FIG_NUMBER_RE = re.compile(
+    r"[*_]{0,3}\s*(?:图|figure)\s*([0-9]+(?:\.[0-9]+)*)", re.IGNORECASE
+)
+# 脱离位置就失效的指代：图前"如下图"、图后"本图/此图/上图"
+# —— 这类引用靠"就近"定位，删掉图就会指到别处
+_VAGUE_BELOW_RE = re.compile(r"下\s*图|figures?\s+below", re.IGNORECASE)
+_VAGUE_ABOVE_RE = re.compile(r"(?:本|此|上)\s*图", re.IGNORECASE)
+
+
+def _neighbour_line(lines: list[str], start: int, step: int) -> int | None:
+    """从 start 出发按 step 找最近的非空行下标（越界返回 None）。"""
+    i = start
+    while 0 <= i < len(lines):
+        if lines[i].strip():
+            return i
+        i += step
+    return None
+
+
+def dedupe_repeated_image_refs(markdown: str) -> tuple[str, list[str]]:
+    """同一张图被重复引用时只保留**首次出现**那一处（连图注一起删）。
+
+    为什么必须做：并行分章各自拿到同一份全量材料，会把同一张图在多个章节里
+    重复插一遍。实测 222e0839 / 62b64b79 / b4a4d714 / d20f5bee 四篇论文都留下
+    了"同一张图插两次、图注几乎一模一样"的痕迹（体检脚本
+    backend/scripts/check_paper_figures.py 可复现）。
+
+    删除条件——**四条同时成立**，每一条都来自真实样本的复盘：
+      1. 重复那处**带编号图注**：没有图注就无从判断正文怎么指称它；
+      2. 它的图注编号 == 首次出现处的图注编号：编号一致才说明这张图在文中的
+         编号是稳定的，正文提到该编号时读者仍能回到首次出现处找到它。
+         反例（d20f5bee 实测）：影子价格图首次出现是"图 4.4"，重复处图注写成
+         "图 4.1"，而其后正文正好写着"图 4.1 中，y1*(蓝线)…"——删掉就会让这句
+         指到前面的"可行域图"。**错误引用比重复插图更糟**，这时宁可保留，
+         把图号一致性交给红队（prompts/writing.py 红队清单第 13 条）。
+      3. 图前没有"如下图"、图注后没有"本图/上图"这类靠位置定位的指代；
+      4. 其他编号引用（例如后一段在讲"图 4.3"）与本次删除无关，不构成阻碍——
+         早期版本把整段窗口里的编号都当阻碍，结果把两篇论文里完全安全的重复图
+         也留下了（体检脚本跑真实论文时暴露，已按样本修正）。
+
+    返回 (清理后的 markdown, 被删的 URL 列表)；列表长度 = 删除次数。
+    """
+    if not markdown:
+        return markdown, []
+
+    lines = markdown.split("\n")
+
+    # 第一遍：每张图的首次出现下标 + 它的图注编号
+    first_at: dict[str, int] = {}
+    first_number: dict[str, str | None] = {}
+    for idx, raw in enumerate(lines):
+        m = _MD_IMAGE_LINE_RE.match(raw.strip())
+        if not m:
+            continue
+        url = m.group(1)
+        if url in first_at:
+            continue
+        first_at[url] = idx
+        first_number[url] = None
+        cap = _neighbour_line(lines, idx + 1, +1)
+        if cap is not None:
+            num = _FIG_NUMBER_RE.match(lines[cap].strip())
+            if num:
+                first_number[url] = num.group(1)
+
+    # 第二遍：删除满足四条判据的重复出现（及其图注），保持"单一空行分隔"
+    dropped: list[str] = []
+    kept_unsafe = 0
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        m = _MD_IMAGE_LINE_RE.match(lines[i].strip())
+        if m and first_at.get(m.group(1), -1) != i:
+            url = m.group(1)
+            cap = _neighbour_line(lines, i + 1, +1)
+            has_caption = cap is not None and bool(_FIGURE_CAPTION_RE.match(lines[cap]))
+            cap_num = None
+            if has_caption:
+                num = _FIG_NUMBER_RE.match(lines[cap].strip())
+                cap_num = num.group(1) if num else None
+
+            prev = _neighbour_line(lines, i - 1, -1)
+            after = _neighbour_line(lines, (cap + 1) if has_caption else i + 1, +1)
+            vague = bool(
+                (prev is not None and _VAGUE_BELOW_RE.search(lines[prev]))
+                or (after is not None and _VAGUE_ABOVE_RE.search(lines[after]))
+            )
+            first_n = first_number.get(url)
+
+            if cap_num is None or cap_num != first_n or vague:
+                kept_unsafe += 1
+                out.append(lines[i])
+                i += 1
+                continue
+
+            dropped.append(url)
+            i += 1
+            while i < len(lines) and not lines[i].strip():
+                i += 1
+            if i < len(lines) and _FIGURE_CAPTION_RE.match(lines[i]):
+                i += 1
+            if out and not out[-1].strip() and i < len(lines) and not lines[i].strip():
+                i += 1
+            continue
+        out.append(lines[i])
+        i += 1
+
+    if kept_unsafe:
+        # 保留不是"没事发生"：它说明论文里有编号对不上的重复图，需要红队/人工改图号
+        logger.warning(
+            "论文有 %d 处重复图片引用因编号对不上而保留（需检查图号一致性）",
+            kept_unsafe,
+        )
+    if dropped:
+        logger.info("论文去重：移除 %d 处重复图片引用", len(dropped))
+        return "\n".join(out), dropped
+    return markdown, dropped
 
 
 def _persist_task_files(

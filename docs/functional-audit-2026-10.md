@@ -219,6 +219,17 @@ GET  /api/tasks            -> 200，列表不含新任务
 出现在列表里、属主落在 `"default"`；访客 WS 能订阅自己的任务；登录用户看不到访客的任务。
 修复后同一复现脚本：`GET -> 200`、`列表含新任务: True`。
 
+> **过程记录（多会话并发工作树的坑，2026-10-14 再次实证）**：提交这个修复时，
+> `git add backend/app/api/tasks.py` 把同一文件里**另一条会话未提交的改动**
+> （`_resolve_image_path` 收敛到 `node_helpers.resolve_task_media_path`、导出 xlsx/csv 改按
+> mtime 取最新文件的 `_latest_task_file`）一起卷进了 commit `0f5d900` 并推送。
+> 已用 `git worktree` 干净检出 HEAD 验证：43/43 相关测试通过，那部分改动自洽
+> （引用的 helper 已在 `node_helpers.py` 入库），推送的树没有坏。
+> AGENTS.md 已把这条教训写成纪律（暂存显式列路径 + 提交前 `git status --short`），
+> 但**同一文件里混着两头改动时，逐文件暂存仍不够**——要么先 `git stash` 分清，
+> 要么用 `git add -p` 按 hunk 挑。本次选择保留（内容已验证可用、force-push 被禁），
+> 并在此登记，免得后人困惑那段代码的来历。
+
 ### 9.2 端到端实测记录
 
 访客属主修复后，一道轻量线性规划题（工厂两种产品、两种原料约束）走完整链路：

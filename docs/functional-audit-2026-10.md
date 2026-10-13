@@ -151,11 +151,11 @@ mc_007.code_snippets[0]   = {"code": "# Python: 0-1背包 ...", "language": "", 
 
 | # | 级别 | 问题 | 证据 / 建议 | 状态 |
 |---|------|------|------------|------|
-| 1 | P2 | **6 个孤儿端点**：`POST /api/knowledge/import/{confirm,extract-text,method,paper}`、`POST /api/learning/path/generate`、`PUT /api/profile/roles` —— 前端与 `backend/scripts/`、tests 均无调用方 | 前端走的是 `/knowledge/upload` + `/knowledge/jobs/{id}` 异步任务流；import/* 是被取代的旧同步路径 | ⚠️ 未处置（删 HTTP 契约是产品决策，留给你定） |
+| 1 | P2 | **6 个孤儿端点**：`POST /api/knowledge/import/{confirm,extract-text,method,paper}`、`POST /api/learning/path/generate`、`PUT /api/profile/roles` —— 前端与 `backend/scripts/`、tests 均无调用方 | 前端走的是 `/knowledge/upload` + `/knowledge/jobs/{id}` 异步任务流；import/* 是被取代的旧同步路径 | ✅ **已删**（88 → 82 端点），见第十一节 |
 | 2 | P2 | **测试残渣落进运行数据目录**：`backend/data/` 下与 `learning.db`、`sessions.db` 混放 `test_learning*.db` 等 | 根因：`test_learning_store.py` 的 `__main__` 直跑块写死 `Path("data")`（pytest 侧本就正确用 tmp_path） | ✅ 已修：直跑块改 `tempfile.TemporaryDirectory`；存量 8 项残渣已清 |
 | 3 | P2 | `pytest.ini` 的 `addopts = -q` 吞掉 `N passed` 汇总行 | 只能靠退出码判断成败 | ✅ 已由你改为 `-ra` |
-| 4 | P3 | 前端 `LearningPath` 接口声明 `total_units/completed_units/overall_mastery`，后端从不返回 → store 里 `?? 0` 兜底 | 学习页未渲染这三个字段，暂无用户可见影响 | ⚠️ 未修 |
-| 5 | P3 | 对已完成任务 `POST /cancel` 返回 200「任务已取消」 | 幂等无害，建议改 409 | ⚠️ 未修 |
+| 4 | P3 | 前端 `LearningPath` 接口声明 `total_units/completed_units/overall_mastery`，后端从不返回 → store 里 `?? 0` 兜底 | 三个计算属性恒为 0 且无任何页面消费 | ✅ 已删（死字段不补默认值充数），见第十一节 |
+| 5 | P3 | 对已完成任务 `POST /cancel` 返回 200「任务已取消」 | 幂等无害，但前端会把已完成任务显示成已取消，状态骗人 | ✅ 已改 409 + 5 例回归测试 |
 | 6 | P2 | **方法卡详情有数据但不渲染**：`formulas` / `common_mistakes` / `code_snippets` / `typical_scenarios` / `not_applicable_when` / `related_cards` 前端无展示位 | 同 dialog 的 paper 分支把这些字段渲染得很完整 | ✅ 已修：按 paper 分支规格补齐，公式走统一 markdown 管线（KaTeX） |
 
 ---
@@ -304,3 +304,50 @@ apikeys.py:303/373），所以**已配置的 Key 不受影响、任务与对话�
 三个方向（按推荐排序）：① 对 `PROVIDER_PRESETS` 里的已知域名做白名单，跳过 DNS 判定；
 ② 把 `198.18.0.0/15` 从内网判定中排除（它是 benchmarking 保留段，常被代理软件的
 fake-ip 池使用，本机即是）；③ 用环境变量开关控制这层 DNS 校验，默认只在生产开。
+
+---
+
+## 十一、清理轮：孤儿端点与死字段（用户拍板「清理」）
+
+### 11.1 删除的 6 个端点（88 → 82）
+
+用脚本重新做了一次前后端契约比对（而不是手工抽查），确认无调用方后删除：
+
+| 端点 | 删除理由 |
+|------|----------|
+| `POST /api/knowledge/import/paper` `/method` `/confirm` `/extract-text` | 整个 `knowledge_import_routes.py` 删除。前端走 `/knowledge/upload` + `/knowledge/jobs/{id}` 异步任务流，这套同步预览/确认流程已被取代 |
+| `POST /api/learning/path/generate` | 与 `GET /learning/path/{role}` 重复（都调 `generate_learning_path`），只是多两个前端从不传的 level/goal 参数 |
+| `PUT /api/profile/roles` | 无任何调用方；画像的角色改由 `POST /profile/diagnose` 写入（该端点保留——它是画像唯一的写入口，且有隔离测试覆盖） |
+
+**没有连带删除的**：`app/services/kb_extractor.py`（`KBExtractor`）。它表面上只被
+`knowledge_import_routes.py` 引用，但 `backend/scripts/` 下有 5 个批量导入脚本
+（`batch_extract_methods` / `batch_import_papers` / `build_missing_problems` /
+`import_2014a` / `import_problems`）在用它——86 张方法卡当初就是这么进来的。
+HTTP 表面可以删，提取引擎必须留。
+
+### 11.2 顺手发现：角色画像从未被写入（新 P2，未修）
+
+删 `/profile/roles` 时顺着读了一遍画像链路，发现一个**与删除无关的既有缺陷**：
+
+- 前端 `stores/profile.ts:49` 用 `hasProfile = p.roles.length > 0` 判断有没有学习画像，
+  它决定首页「继续学习」卡是否显示；
+- 而后端 `profile.roles` 只有两个写入口——`PUT /roles`（刚删，本来就没调用方）和
+  `POST /profile/diagnose`（前端也从不调用，只有测试在用）；
+- 且 `_profiles` 是**进程内存字典**，重启即失。
+
+结论：`hasProfile` 恒为 false，**首页「继续学习」卡永远不会显示**；服务端画像的
+角色/目标/自评从来没有人写过。学习工位的角色切换是纯前端（localStorage）行为，
+与服务端画像是两张皮。
+
+最小修法（约 10 行，未实施）：让学习工位的角色切换器在切角色时调一次
+`POST /profile/diagnose`（或把保留的那个写入口接上），`hasProfile` 才有意义。
+
+### 11.3 删掉的死字段与改掉的取消语义
+
+- 前端 `LearningPath.total_units / completed_units / overall_mastery` 及 store 里
+  三个恒为 0 的计算属性：后端从不返回这些字段，也没有任何页面消费。删除而不是
+  「补默认值充数」——要么后端真返回，要么别声明。
+- `POST /api/tasks/{id}/cancel` 对终态任务（completed/error/cancelled）改返 **409**：
+  此前恒返 200「任务已取消」，前端会把已完成的任务显示成已取消。新增
+  `tests/test_cancel_semantics.py`（5 例）：running 仍 200、三种终态 409 且状态
+  不被篡改、他人任务仍 404（隔离优先于状态判断）。

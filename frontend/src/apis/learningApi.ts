@@ -31,9 +31,9 @@ export interface LearningPath {
   role: string;
   generated_at: string;
   phases: LearningPhase[];
-  total_units: number;
-  completed_units: number;
-  overall_mastery: number;
+  // 注意：不要凭直觉加 total_units / completed_units / overall_mastery——
+  // 后端 /learning/path/{role} 从不返回它们（审计 2026-10-14 曾因此留下三个
+  // 恒为 0 的死计算属性）。学习进度统计走 /api/profile/progress。
 }
 
 // ── API 调用 ──────────────────────────────────────────

@@ -24,6 +24,12 @@ export const useLearningStore = defineStore("learning", () => {
   const error = ref("");
 
   // ── 计算属性 ──────────────────────────────────────
+  // 曾经这里有 totalUnits/completedUnits/progressPercent 三个计算属性，来源是
+  // LearningPath.total_units / completed_units —— 但后端 /learning/path/{role}
+  // 从不返回这两个字段（只返回 phases/generated_at/path_id/role/user_id），
+  // 于是它们恒为 0，且没有任何页面消费（LearningDoc.vue 里同名的 progressPercent
+  // 是它自己根据滚动位置算的，与此无关）。审计 2026-10-14 清理：死字段不补默认值
+  // 充数，要么后端真返回，要么删掉。
   const skillTree = computed(() => {
     if (!path.value) return [];
     return path.value.phases.map((phase: LearningPhase) => ({
@@ -42,14 +48,6 @@ export const useLearningStore = defineStore("learning", () => {
       })),
     }));
   });
-
-  const totalUnits = computed(() => path.value?.total_units ?? 0);
-  const completedUnits = computed(() => path.value?.completed_units ?? 0);
-  const progressPercent = computed(() =>
-    totalUnits.value > 0
-      ? Math.round((completedUnits.value / totalUnits.value) * 100)
-      : 0,
-  );
 
   // ── 操作 ──────────────────────────────────────────
   async function loadPath(role?: AgentRole) {
@@ -113,9 +111,6 @@ export const useLearningStore = defineStore("learning", () => {
     loading,
     error,
     skillTree,
-    totalUnits,
-    completedUnits,
-    progressPercent,
     loadPath,
     loadUnit,
     markComplete,

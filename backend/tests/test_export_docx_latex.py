@@ -198,3 +198,30 @@ def test_formula_falls_back_to_text_without_xslt(monkeypatch) -> None:
         assert "[公式: " in text
     finally:
         md_docx.latex_to_omml.cache_clear()
+
+
+def test_docx_multiline_formula_block(tmp_path) -> None:
+    """回归：多行公式块（`$$` 独占一行包裹 `\\begin{cases}`）在真实论文里约占多数
+    ——实测一篇 14 个 vs 单行块 1 个，必须与单行块一样转成原生公式。"""
+    if not _omml_available():
+        pytest.skip("本机无 MML2OMML.XSL（未安装 Office）")
+    import zipfile
+
+    md = (
+        "$$\n"
+        "\\begin{cases}\n"
+        "x_1 = t + 20,\\\\\n"
+        "x_2 = t,\n"
+        "\\end{cases}\n"
+        "$$\n\n"
+        "正文段落\n"
+    )
+    doc = docx.Document()
+    markdown_to_docx(doc, md)
+    path = tmp_path / "multiline.docx"
+    doc.save(str(path))
+
+    xml = zipfile.ZipFile(path).read("word/document.xml").decode("utf-8")
+    assert "<m:oMath" in xml, "多行公式块应转成 Word 原生公式"
+    text = "\n".join(p.text for p in doc.paragraphs)
+    assert "$$" not in text, "公式定界符不得作为正文残留"

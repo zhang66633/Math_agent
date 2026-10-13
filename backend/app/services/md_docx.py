@@ -301,13 +301,26 @@ def markdown_to_docx(
                 except Exception:  # noqa: BLE001 — 插图失败不阻断导出
                     pass
 
-        # 独立公式块 $$...$$ → Word 原生公式（OMML）；不可用时落到后面的文本降级
+        # 公式 → Word 原生公式（OMML）；任一环节不可用时落到后面的文本降级。
+        # 两种写法都要支持：实测一篇论文里「多行块」约 14 个，远多于「单行块」。
         formula_line = line.strip()
-        if (
+        if formula_line == "$$":
+            # (a) 多行公式块：$$ 独占一行 … $$（内含 \begin{cases} / \begin{aligned} 等）
+            block: list[str] = []
+            j = i + 1
+            while j < len(lines) and lines[j].strip() != "$$":
+                block.append(lines[j])
+                j += 1
+            latex_block = "\n".join(block).strip()
+            if j < len(lines) and latex_block and insert_omml_paragraph(doc, latex_block):
+                i = j + 1
+                continue
+        elif (
             formula_line.startswith("$$")
             and formula_line.endswith("$$")
             and len(formula_line) > 4
         ):
+            # (b) 单行公式块：$$...$$
             if insert_omml_paragraph(doc, formula_line[2:-2].strip()):
                 i += 1
                 continue

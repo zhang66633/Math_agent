@@ -85,26 +85,41 @@ _SUBPROBLEM_RE = re.compile(r"^#{2,4}\s*子问题\s*(\d+)\s*[：:]\s*(.+?)\s*$",
 
 
 def build_paper_sections(solving_output: str) -> list[tuple[str, str]]:
-    """按求解报告中的「子问题 N：标题」动态拆分核心章；解析不到时退化为单个通用核心章。"""
+    """按求解报告中的「子问题 N：标题」动态拆分核心章；解析不到时退化为单个通用核心章。
+
+    返回的标题**自带 Markdown 层级前缀**（`##` 章 / `###` 小节）：多个子问题共用同一个
+    「四、模型的建立与求解」章标题，子问题各自作为 `###` 小节——避免出现多个同级
+    `## 四、…`。实测生成论文里该章标题曾重复 5 次（每个子问题一次），属格式硬伤。
+    """
     matches = _SUBPROBLEM_RE.findall(solving_output or "")
     if not matches:
         return [
-            *_GENERIC_SECTIONS[:3],
+            *[(f"## {t}", r) for t, r in _GENERIC_SECTIONS[:3]],
             (
-                "四、模型的建立与求解",
+                "## 四、模型的建立与求解",
                 "严格按大纲完成：①建模思路 ②模型与算法（$$公式块$$、关键表格）"
                 "③求解结果（引用材料中与本节直接相关的 /api/images/ 图片链接并配图注，"
                 "每张图全文只引用一次，禁止跨节重复引用同一张图）④结果检验。"
                 "**必须完整写完，不要截断。**",
             ),
-            *_GENERIC_SECTIONS[3:],
+            *[(f"## {t}", r) for t, r in _GENERIC_SECTIONS[3:]],
         ]
     core: list[tuple[str, str]] = []
-    for num, raw_title in matches:
+    for idx, (num, raw_title) in enumerate(matches, start=1):
         sub_title = raw_title.strip().strip("*")
-        title = f"四、模型的建立与求解 — 子问题{num}"
+        if idx == 1:
+            # 第一个子问题承担第四章章标题
+            title = "## 四、模型的建立与求解"
+            head_rule = "首行原样使用 `## 四、模型的建立与求解` 作为章标题，其下逐个小节用 `###` 级别"
+        else:
+            # 其余子问题不再重复章标题，降级为小节
+            title = f"### 4.{idx} {sub_title}"
+            head_rule = (
+                "**不要再输出 `##` 级标题**（章标题已在第 1 个子问题出现过）；"
+                f"本节首行原样使用 `### 4.{idx} {sub_title}`"
+            )
         req = (
-            f"### 子问题{num}：{sub_title}\n"
+            f"{head_rule}\n"
             "严格按此结构：①原理与方法 ②模型与求解（$$公式块$$、关键表格）"
             f"③求解结果（只引用求解材料中「子问题{num}」小节内出现的图片链接，"
             "配图注；**其他子问题的图留给各自小节，严禁跨节引用**——每张图全文只引用一次）"
@@ -112,7 +127,11 @@ def build_paper_sections(solving_output: str) -> list[tuple[str, str]]:
             "**必须输出完整小节，不要截断。**"
         )
         core.append((title, req))
-    return [*_GENERIC_SECTIONS[:3], *core, *_GENERIC_SECTIONS[3:]]
+    return [
+        *[(f"## {t}", r) for t, r in _GENERIC_SECTIONS[:3]],
+        *core,
+        *[(f"## {t}", r) for t, r in _GENERIC_SECTIONS[3:]],
+    ]
 
 
 def writing_agent_node(state: AgentState) -> dict:
@@ -232,8 +251,9 @@ def writing_agent_node(state: AgentState) -> dict:
         )
         _log_usage(task_id, f"writing_section_{i + 1}", resp)
         sec = _clean_md(resp.content)
-        if sec and not sec.startswith("##"):
-            sec = f"## {title}\n\n{sec}"
+        # title 现在自带层级前缀（`##` 章 / `###` 小节），兜底时原样使用，不再强加 `##`
+        if sec and not sec.lstrip().startswith("#"):
+            sec = f"{title}\n\n{sec}"
         return i, sec
 
     from concurrent.futures import ThreadPoolExecutor

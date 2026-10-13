@@ -29,6 +29,7 @@ RUN pip install --no-cache-dir \
     pandas \
     matplotlib \
     seaborn \
+    networkx \
     sympy \
     cvxpy \
     openpyxl \

@@ -52,10 +52,18 @@ def test_resolve_matches_agent_role() -> None:
         "sensitivity-analysis"
     }
     assert {s.name for s in resolve_skills("optimization", "writing")} == {"paper-structure"}
-    # 求解与数据预处理节点负责出图，因此拿到图表规范（两者同一份技能）
-    assert {s.name for s in resolve_skills("optimization", "solving")} == {"chart-standards"}
-    assert {s.name for s in resolve_skills("optimization", "data_preprocessing")} == {
-        "chart-standards"
+    # 求解与数据预处理节点负责出图，因此拿到图表类技能。
+    # 2026-10 新增 chart-templates（可运行代码骨架）后，这两个角色共有两份图表技能：
+    # chart-standards 给规范、chart-templates 给模板，二者配套使用。
+    for role in ("solving", "data_preprocessing"):
+        names = {s.name for s in resolve_skills("optimization", role)}
+        assert {"chart-standards", "chart-templates"} <= names, (
+            f"{role} 缺少图表技能，实际: {sorted(names)}"
+        )
+    # 反向护栏：非出图角色不应被塞图表模板（省 prompt）
+    assert "chart-templates" not in {s.name for s in resolve_skills("optimization", "writing")}
+    assert "chart-templates" not in {
+        s.name for s in resolve_skills("optimization", "verification")
     }
 
 

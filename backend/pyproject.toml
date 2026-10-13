@@ -35,6 +35,9 @@ dependencies = [
     "tabulate>=0.9.0",
     "matplotlib>=3.7.0",
     "seaborn>=0.13.0",
+    # 图论建模与 chart-templates 的 network_graph 模板都要用；
+    # 沙箱镜像（Dockerfile.sandbox）需同步装，否则该模板在容器里必然 ImportError
+    "networkx>=3.0",
     "python-docx>=1.0.0",
     "pdfplumber>=0.10.0",
     "click>=8.0.0",
@@ -87,6 +90,10 @@ select = ["E", "F", "W", "I", "UP", "B"]
 ignore = ["E501", "B008", "B904"]
 
 [tool.ruff.lint.per-file-ignores]
+# vendored 第三方绘图模板（来自 Jaxon1216/mma-chart-templates）：保持与上游逐字一致，
+# 不套用本项目的 import 排序/zip(strict=) 风格，否则日后无法 diff 同步。
+# 正确性由 tests/test_chart_templates.py 守（语法 + 入口函数 + 真跑出图）。
+"app/skills/chart-templates/templates/*.py" = ["I001", "B905"]
 # 测试文件先 sys.path 引导再 import app（脚本模式兼容），E402 属刻意
 "tests/**" = ["E402"]
 # god-files 拆分的知识库路由：import * 共享 schema 命名空间 + 路由实例定义在导入前

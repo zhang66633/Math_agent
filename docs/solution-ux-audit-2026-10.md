@@ -163,6 +163,21 @@ flowchart LR
 
 ## 4. 验证记录
 
+### 4.1 真机目视（无头 Edge 打本机 dev server，实测数据）
+
+**训练场 · 错题本**（guest 真实 12 道错题）：题目完整可读、`错 N 次` 与
+`重做/移除` 常驻卡片右侧，聊天面板展开也不再出现横向滚动条。
+
+![训练场错题本改版后](assets/ux-2026-10/practice-mistakes-after.png)
+
+**方案模式 · 右栏交付物**（用任务 222e0839 的真实文件清单渲染）：
+`交付物 8 个文件 / 图表 5 · 正文引用 2`，绿标 `正文` 与灰标 `过程` 区分开，
+`8 KB` / `1.2 MB` 尺寸与「数据文件 / 报告与结果包」分组就位。
+
+![方案模式右栏交付物](assets/ux-2026-10/solution-deliverables-after.png)
+
+### 4.2 自动化
+
 - `pytest -q`：**255 passed**（含本次新增 8 条）；1 条
   `test_apikeys_ssrf.py::test_public_https_accepted` 失败，**不是本次改动引入**：
   本机 DNS 把 `api.deepseek.com` 解析成 `198.18.0.89`（代理 fake-IP），

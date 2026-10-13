@@ -17,3 +17,19 @@ TEACH_SHARED_RULES = """## 教学模式通用规则
 3. **正向鼓励** — 先肯定进步，再指出改进方向
 4. **实例类比** — 用学生熟悉的场景解释抽象概念
 5. **自检清单** — 引导学生建立自我检验的习惯"""
+
+
+def render_prompt(template: str, **kwargs: object) -> str:
+    """安全渲染提示词模板：只替换显式给出的键，其余花括号原样保留。
+
+    为什么不用 ``str.format``：提示词里常含 JSON 输出示例（如
+    ``{"step": "analysis", "reason": "..."}``），``str.format`` 会把 ``{"step"``
+    当成占位符解析并抛 ``KeyError: '"step"'``。2026-10-13 端到端压测时，
+    方案模式就是因为 planner 用了 ``.format`` 而在 plan_execution 节点整体失败。
+
+    只支持无条件占位符 ``{name}``（不支持格式说明符）——这已覆盖本项目全部提示词。
+    """
+    out = template
+    for key, value in kwargs.items():
+        out = out.replace("{" + key + "}", str(value))
+    return out

@@ -41,6 +41,7 @@ from .node_helpers import (  # noqa: F401  (god-files 拆分 #31：辅助函数�
     tool_call_id,
     tool_timeout,
 )
+from .prompts._shared import render_prompt
 from .prompts.classifier import CLASSIFIER_SYSTEM_PROMPT, CLASSIFIER_USER_TEMPLATE
 from .prompts.planner import PLANNER_SYSTEM_PROMPT, PLANNER_USER_TEMPLATE
 
@@ -390,7 +391,10 @@ def plan_execution(state: AgentState) -> dict:
         or "（无相关竞赛真题）"
     )
 
-    system_prompt = PLANNER_SYSTEM_PROMPT.format(
+    # 用 render_prompt 而非 .format：该模板含 JSON 输出示例（{"step": ...}），
+    # .format 会把 {"step" 当占位符并抛 KeyError，导致方案模式整体失败。
+    system_prompt = render_prompt(
+        PLANNER_SYSTEM_PROMPT,
         methods=methods_str,
         templates=templates_str,
         papers=papers_str,

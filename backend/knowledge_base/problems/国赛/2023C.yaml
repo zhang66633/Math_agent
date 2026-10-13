@@ -31,5 +31,5 @@ problem:
     problem_type: ["optimization", "prediction", "评价"]
     difficulty: "medium"
   linked_papers:
-    - "paper_2023C_01"
+    - "paper_001"
   source_url: ""

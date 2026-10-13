@@ -1,0 +1,334 @@
+"""知识库完整性测试（审计 2026-10 深度审计固化）。
+
+把一次性审计脚本的判定固化成 CI 不变量，防止数据腐化。分两类：
+
+**硬不变量（必须为零，否则 FAIL）**
+  - 每个 YAML 都能按 app.knowledge.schemas 的 Pydantic 模型校验通过
+  - ID 全局唯一，且符合各自 pattern
+  - 无悬空引用：related_cards / related_papers / linked_papers 都指向真实数据
+  - problem_ref 使用 `prob_XXX` 约定（extractor prompt 与 ingest 代码的唯一口径），
+    且能解析到真实题目
+  - 方法卡名称不重复（重名会稀释检索结果）
+  - LaTeX 括号成对、\\begin/\\end 环境匹配
+  - 无乱码（U+FFFD / UTF-8 被按 GBK 读坏的痕迹）
+
+**基线棘轮（只允许减少，不允许增加）**
+  内容字段缺口（typical_scenarios / applicable_when / formulas / code_snippets）与
+  文件名—ID 不对应属于既有数据债，用 baseline 锁住「不继续恶化」，补一个降一格。
+
+运行: 在 backend/ 目录下 `python -m pytest tests/test_kb_integrity.py -q`
+"""
+
+import re
+import sys
+import unicodedata
+from collections import Counter, defaultdict
+from pathlib import Path
+
+import yaml
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from app.knowledge.schemas import (  # noqa: E402
+    MethodCard,
+    Paper,
+    Problem,
+    Template,
+)
+
+KB_ROOT = Path(__file__).resolve().parent.parent / "knowledge_base"
+
+# ── 基线棘轮：当前实测值（2026-10 深度审计，86 张方法卡）。补全内容后应主动下调。──
+BASELINE_MISSING_SCENARIOS = 32
+BASELINE_MISSING_APPLICABLE = 31
+BASELINE_MISSING_FORMULAS = 33
+BASELINE_MISSING_CODE = 2
+BASELINE_FILENAME_MISMATCH = 26
+# 重名方法卡对数（5 对 = 10 个文件）。合并后下调。
+BASELINE_DUPLICATE_NAMES = 5
+
+_MOJIBAKE_MARKERS = ("锟斤拷", "å", "ã")
+
+
+def _kb_files(subdir: str):
+    """列出某类知识的 YAML 文件。
+
+    目录不存在时直接抛错而不是返回空列表——空列表会让所有「无失败即通过」的
+    断言变成空转（实测踩过：KB_ROOT 多上一级，10 个测试全绿但一个文件都没读）。
+    """
+    base = KB_ROOT / subdir
+    if not base.is_dir():
+        raise AssertionError(f"知识库目录不存在: {base}（KB_ROOT={KB_ROOT}）")
+    return [
+        f
+        for f in sorted(base.rglob("*.yaml"))
+        if "_source_skill_docs" not in str(f)
+        and "_import_queue" not in str(f)
+        and not f.name.startswith("_")
+    ]
+
+
+def _load(subdir: str, root_key: str):
+    """返回 [(relpath, raw_dict, pydantic_obj_or_None, error_or_None)]"""
+    out = []
+    for f in _kb_files(subdir):
+        rel = f.relative_to(KB_ROOT).as_posix()
+        try:
+            data = yaml.safe_load(f.read_text(encoding="utf-8"))
+        except Exception as e:  # noqa: BLE001
+            out.append((rel, None, None, f"YAML 解析失败: {e}"))
+            continue
+        if not isinstance(data, dict) or root_key not in data:
+            out.append((rel, data, None, f"缺少 {root_key} 根键"))
+            continue
+        model = {"method_card": MethodCard, "paper": Paper, "template": Template, "problem": Problem}[
+            root_key
+        ]
+        try:
+            out.append((rel, data, model(**(data[root_key] or {})), None))
+        except Exception as e:  # noqa: BLE001
+            out.append((rel, data, None, f"{model.__name__} 校验失败: {str(e)[:200]}"))
+    return out
+
+
+# ── 硬不变量 ───────────────────────────────────────────
+
+
+def test_all_yaml_validate_against_schemas():
+    """L1：结构完整性。这是最基础的一条——字段类型/范围/ID 格式全在这里兜底。"""
+    failures = []
+    for subdir, key in (
+        ("methods", "method_card"),
+        ("papers", "paper"),
+        ("templates", "template"),
+        ("problems", "problem"),
+    ):
+        for rel, _data, _obj, err in _load(subdir, key):
+            if err:
+                failures.append(f"{rel}: {err}")
+    assert not failures, "以下知识库文件未通过 schema 校验:\n" + "\n".join(failures)
+
+
+def test_ids_are_unique_and_match_pattern():
+    """ID 唯一 + 符合 pattern（MethodCard 要求 mc_\\d+，Problem 要求 prob_\\d+）。"""
+    seen: dict[str, list[str]] = defaultdict(list)
+    for subdir, key, pattern in (
+        ("methods", "method_card", r"^mc_\d+$"),
+        ("papers", "paper", r"^paper_.+$"),
+        ("problems", "problem", r"^prob_\d+$"),
+        ("templates", "template", r"^tpl_.+$"),
+    ):
+        for rel, _data, obj, err in _load(subdir, key):
+            if err:
+                continue
+            seen[obj.id].append(rel)
+            assert re.match(pattern, obj.id), f"{rel}: id {obj.id!r} 不符合 {pattern}"
+    dups = {k: v for k, v in seen.items() if len(v) > 1}
+    assert not dups, f"重复 ID: {dups}"
+
+
+def test_no_dangling_cross_references():
+    """L2：related_cards / related_papers / linked_papers 不得指向不存在的数据。"""
+    method_ids = {o.id for _, _, o, e in _load("methods", "method_card") if not e}
+    paper_ids = {o.id for _, _, o, e in _load("papers", "paper") if not e}
+
+    dangling = []
+    for rel, _d, card, err in _load("methods", "method_card"):
+        if err:
+            continue
+        for rc in card.related_cards:
+            if rc not in method_ids:
+                dangling.append(f"{rel}: related_cards → {rc}")
+        for rp in card.related_papers:
+            if rp not in paper_ids:
+                dangling.append(f"{rel}: related_papers → {rp}")
+    for rel, _d, prob, err in _load("problems", "problem"):
+        if err:
+            continue
+        for lp in prob.linked_papers:
+            if lp not in paper_ids:
+                dangling.append(f"{rel}: linked_papers → {lp}")
+    assert not dangling, "悬空引用:\n" + "\n".join(dangling)
+
+
+def test_problem_ref_uses_documented_convention():
+    """problem_ref 必须是 prob_XXX 且能解析到真实题目。
+
+    唯一口径来源：kb_extractor 的 prompt 明写「填写对应的 prob_ 编号（如 prob_001）」，
+    knowledge_ingest 也把它当 problem id 用。曾有一篇写成 '2023C'，导致
+    get_papers_by_problem() 精确匹配查不到、linked_papers 也写成悬空的 paper_2023C_01。
+    """
+    problem_ids = {o.id for _, _, o, e in _load("problems", "problem") if not e}
+    bad = []
+    for rel, _d, paper, err in _load("papers", "paper"):
+        if err or not paper.problem_ref:
+            continue
+        ref = paper.problem_ref.strip()
+        if not re.fullmatch(r"prob_\d+", ref):
+            bad.append(f"{rel}: problem_ref={ref!r} 不是 prob_XXX 形式")
+        elif ref not in problem_ids:
+            bad.append(f"{rel}: problem_ref={ref!r} 在题库中不存在")
+    assert not bad, "problem_ref 约定违规:\n" + "\n".join(bad)
+
+
+def test_duplicate_method_names_do_not_regress():
+    """重名卡片棘轮：当前 5 对（见 docs/AUDIT-2026-10.md 的合并建议）。
+
+    重名会让同一方法在检索结果里出现两遍、稀释 k 个名额，属真实缺陷；
+    但合并要决定「保留哪一份、unit_id 链接怎么跟过去」，涉及删用户的真实数据，
+    故先用棘轮锁住不恶化，等确认合并方案后再清零。
+    """
+    names: dict[str, list[str]] = defaultdict(list)
+    for rel, _d, card, err in _load("methods", "method_card"):
+        if err:
+            continue
+        names[card.name.strip().lower()].append(rel)
+    dups = {k: v for k, v in names.items() if len(v) > 1}
+    assert len(dups) <= BASELINE_DUPLICATE_NAMES, (
+        f"重名方法卡从 {BASELINE_DUPLICATE_NAMES} 对涨到 {len(dups)} 对: {dups}"
+    )
+
+
+def test_no_duplicate_principle_text():
+    """归一化后 principle 完全相同 → 内容重复。"""
+    import hashlib
+
+    def norm(s: str) -> str:
+        s = unicodedata.normalize("NFKC", s or "")
+        s = re.sub(r"\s+", "", s)
+        s = re.sub(r"[，。、；：？！,.;:?!\-—\(\)（）\[\]【】]", "", s)
+        return s.lower()
+
+    buckets: dict[str, list[str]] = defaultdict(list)
+    for rel, _d, card, err in _load("methods", "method_card"):
+        if err:
+            continue
+        buckets[hashlib.md5(norm(card.principle).encode()).hexdigest()].append(rel)
+    dups = {k: v for k, v in buckets.items() if len(v) > 1}
+    assert not dups, f"principle 完全重复: {dups}"
+
+
+def test_latex_is_balanced():
+    """$ 必须成对；\\begin/\\end 环境必须匹配。"""
+    problems = []
+
+    def check(text: str, where: str):
+        if not text or "$" not in text:
+            return
+        if text.count("$") % 2:
+            problems.append(f"{where}: $ 奇数个（{text.count('$')}）")
+        b = Counter(re.findall(r"\\begin\{([^}]+)\}", text))
+        e = Counter(re.findall(r"\\end\{([^}]+)\}", text))
+        for env, n in b.items():
+            if e.get(env, 0) != n:
+                problems.append(f"{where}: {env} begin={n} end={e.get(env, 0)}")
+
+    for rel, _d, card, err in _load("methods", "method_card"):
+        if err:
+            continue
+        for fl in card.formulas:
+            check(fl if isinstance(fl, str) else fl.latex, f"{rel} formulas")
+    for rel, _d, paper, err in _load("papers", "paper"):
+        if err:
+            continue
+        for fl in paper.key_formulas:
+            check(fl.latex, f"{rel} key_formulas")
+    assert not problems, "LaTeX 不配平:\n" + "\n".join(problems)
+
+
+def test_no_mojibake():
+    """U+FFFD 与 UTF-8 被按 GBK 读坏的典型痕迹。"""
+    bad = []
+
+    def check(text: str, where: str):
+        if not text:
+            return
+        if "\ufffd" in text:
+            bad.append(f"{where}: 含 U+FFFD")
+        for m in _MOJIBAKE_MARKERS:
+            if m in text:
+                bad.append(f"{where}: 乱码片段 {m!r}")
+                break
+
+    for rel, _d, card, err in _load("methods", "method_card"):
+        if err:
+            continue
+        check(card.principle, f"{rel} principle")
+        check(card.name, f"{rel} name")
+    for rel, _d, paper, err in _load("papers", "paper"):
+        if err:
+            continue
+        check(paper.title, f"{rel} title")
+    assert not bad, "疑似编码损坏:\n" + "\n".join(bad)
+
+
+# ── 基线棘轮 ───────────────────────────────────────────
+
+
+def _missing_field_counts():
+    sc = ap = fm = cd = 0
+    for _rel, _d, card, err in _load("methods", "method_card"):
+        if err:
+            continue
+        sc += not card.typical_scenarios
+        ap += not card.applicable_when
+        fm += not card.formulas
+        cd += not card.code_snippets
+    return sc, ap, fm, cd
+
+
+def test_content_gaps_do_not_regress():
+    """内容字段缺口只允许减少。补全后请主动下调 BASELINE_* 常量。"""
+    sc, ap, fm, cd = _missing_field_counts()
+    msgs = []
+    if sc > BASELINE_MISSING_SCENARIOS:
+        msgs.append(f"缺 typical_scenarios: {sc} > 基线 {BASELINE_MISSING_SCENARIOS}")
+    if ap > BASELINE_MISSING_APPLICABLE:
+        msgs.append(f"缺 applicable_when: {ap} > 基线 {BASELINE_MISSING_APPLICABLE}")
+    if fm > BASELINE_MISSING_FORMULAS:
+        msgs.append(f"缺 formulas: {fm} > 基线 {BASELINE_MISSING_FORMULAS}")
+    if cd > BASELINE_MISSING_CODE:
+        msgs.append(f"缺 code_snippets: {cd} > 基线 {BASELINE_MISSING_CODE}")
+    assert not msgs, "内容缺口比基线更糟了（补内容或下调基线）:\n" + "\n".join(msgs)
+
+
+def test_filename_id_mismatch_does_not_regress():
+    """文件名与 id/name 不对应只是观感问题，同样用棘轮锁住不恶化。"""
+    mismatch = 0
+    for f in _kb_files("methods"):
+        rel = f.relative_to(KB_ROOT).as_posix()
+        for r2, _d, card, err in _load("methods", "method_card"):
+            if r2 != rel or err:
+                continue
+            if card.id not in f.name and card.name[:6] not in f.name:
+                mismatch += 1
+    assert mismatch <= BASELINE_FILENAME_MISMATCH, (
+        f"文件名不对应从 {BASELINE_FILENAME_MISMATCH} 涨到 {mismatch}"
+    )
+
+
+def test_knowledge_base_is_not_empty():
+    """防误删：四类数据的规模下限。"""
+    assert len(_kb_files("methods")) >= 80, "方法卡片数量异常偏少"
+    assert len(_kb_files("papers")) >= 30, "论文数量异常偏少"
+    assert len(_kb_files("problems")) >= 35, "真题数量异常偏少"
+    assert len(_kb_files("templates")) >= 3, "模板数量异常偏少"
+
+
+if __name__ == "__main__":
+    for _fn in [
+        test_all_yaml_validate_against_schemas,
+        test_ids_are_unique_and_match_pattern,
+        test_no_dangling_cross_references,
+        test_problem_ref_uses_documented_convention,
+        test_duplicate_method_names_do_not_regress,
+        test_no_duplicate_principle_text,
+        test_latex_is_balanced,
+        test_no_mojibake,
+        test_content_gaps_do_not_regress,
+        test_filename_id_mismatch_does_not_regress,
+        test_knowledge_base_is_not_empty,
+    ]:
+        _fn()
+        print(f"PASSED {_fn.__name__}")
+    print("ALL TESTS PASSED")

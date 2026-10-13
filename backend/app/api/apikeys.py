@@ -1,7 +1,6 @@
 """API Key 管理 — 存储、验证、CRUD。
 外部通过 from .apikeys import get_active_api_key, PROVIDER_PRESETS 使用。"""
 
-import ipaddress
 import json
 import uuid
 from pathlib import Path
@@ -11,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..auth import GitHubUser, get_current_user, resolve_user_id
 from ..config import get_settings
+from ..services.rate_limit import rate_limit
 from .schemas.request import ApiKeyCreate, ApiKeyQuickCreate
 from .schemas.response import ApiKeyResponse
 
@@ -47,25 +47,95 @@ def _preset_base_url(provider: str, explicit: str = "") -> str:
     return PROVIDER_PRESETS.get(provider, {}).get("base_url", "")
 
 
+def _blocked_networks() -> tuple:
+    """真正危险的网段清单（延迟构造，避免 import 期成本）。
+
+    为什么不能用 ipaddress 的 is_private/is_reserved：
+    实测本机所有域名（api.deepseek.com / github.com …）都解析到 198.18.0.x——
+    机器在代理 fake-ip DNS 后面，而 Python 的 `is_private` 覆盖 198.18.0.0/15
+    （网络设备基准测试段）。用 is_private 会把**每一个**合法服务商地址拒掉，
+    SSRF 校验直接不可用（2026-10 实测踩坑，见 tests/test_apikeys_hardening.py）。
+    故这里只列「确实该拦」的段，198.18.0.0/15 明确放行。
+    """
+    import ipaddress
+
+    nets = [
+        "0.0.0.0/8",  # "this network"
+        "10.0.0.0/8",  # RFC1918
+        "172.16.0.0/12",  # RFC1918
+        "192.168.0.0/16",  # RFC1918
+        "127.0.0.0/8",  # loopback
+        "169.254.0.0/16",  # link-local（含云元数据 169.254.169.254）
+        "100.64.0.0/10",  # CGNAT
+        "224.0.0.0/4",  # multicast
+        "240.0.0.0/4",  # reserved，不可路由
+        "::/128",  # IPv6 unspecified
+        "::1/128",  # IPv6 loopback
+        "fe80::/10",  # IPv6 link-local
+        "fc00::/7",  # IPv6 ULA
+        "ff00::/8",  # IPv6 multicast
+        "::ffff:0:0/96",  # IPv4-mapped IPv6（单独判 Embedded IPv4）
+    ]
+    return tuple(ipaddress.ip_network(n) for n in nets)
+
+
+def _is_disallowed_ip(ip_text: str) -> bool:
+    """判断一个字面 IP 是否落在危险网段（内网/回环/链路本地/组播等）。"""
+    import ipaddress
+
+    try:
+        ip = ipaddress.ip_address(ip_text)
+    except ValueError:
+        return False
+    # IPv4-mapped IPv6（::ffff:127.0.0.1）按内层 IPv4 判
+    mapped = getattr(ip, "ipv4_mapped", None)
+    if mapped is not None:
+        ip = mapped
+    return any(ip in net for net in _blocked_networks())
+
+
 def _validate_custom_base_url(base_url: str) -> str:
     """校验用户自定义 base_url，防 SSRF（仅 https + 拒绝内网/回环地址）。
 
     预置服务商地址不经此校验（可信常量表）。
+
+    为什么必须做 DNS 解析：只校验字面 IP 时，`https://internal.corp.local` 这类
+    内网域名会直接穿过——hostname 不是 IP 字面量就走 `pass` 分支（审计 2026-10 P1-1）。
+    这里把域名解析成全部 A/AAAA 记录逐一判定，任一是内网地址即拒绝。
+    解析失败也拒绝：宁可早失败，也不要等 httpx 连接时才有含糊报错。
     """
     if not base_url:
         return ""
     u = urlparse(base_url)
     if u.scheme != "https":
         raise HTTPException(status_code=400, detail="自定义 base_url 仅允许 https")
-    if not u.hostname:
+    hostname = u.hostname
+    if not hostname:
         raise HTTPException(status_code=400, detail="base_url 缺少主机名")
+
+    # 字面 IP：直接判定
+    if _is_disallowed_ip(hostname):
+        raise HTTPException(status_code=400, detail="base_url 不允许指向内网地址")
+
+    # 域名：解析后逐一判定（覆盖内网域名 / DNS 指向内网的公网域名）
+    import socket
+
     try:
-        ip = ipaddress.ip_address(u.hostname)
-    except ValueError:
-        pass  # 域名形式：跳过字面 IP 检查（本地单机应用的务实取舍，已记录于审计计划 004）
-    else:
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
-            raise HTTPException(status_code=400, detail="base_url 不允许指向内网地址")
+        infos = socket.getaddrinfo(hostname, u.port or 443, proto=socket.IPPROTO_TCP)
+    except socket.gaierror as e:
+        raise HTTPException(
+            status_code=400, detail=f"base_url 域名无法解析: {hostname} ({e.strerror})"
+        )
+
+    resolved = {info[4][0] for info in infos}
+    if not resolved:
+        raise HTTPException(status_code=400, detail=f"base_url 域名无法解析: {hostname}")
+    for ip_text in sorted(resolved):
+        if _is_disallowed_ip(ip_text):
+            raise HTTPException(
+                status_code=400,
+                detail=f"base_url 解析到内网地址（{hostname} → {ip_text}），已拒绝",
+            )
     return base_url.rstrip("/")
 
 
@@ -212,7 +282,9 @@ async def _verify_api_key(
         }
 
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        # follow_redirects=False：跟随 302 会把请求带到初始 URL 校验看不到的地址，
+        # 是 SSRF 的经典绕过口（纵深防御，httpx 默认即不跟随，这里显式声明）
+        async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
             resp = await client.post(url, json=body, headers=headers)
             if resp.status_code == 200:
                 return True, ""
@@ -231,12 +303,15 @@ async def _verify_api_key(
         return False, f"验证请求失败: {str(e)[:100]}"
 
 
-@apikeys_router.post("/apikeys/quick")
+@apikeys_router.post("/apikeys/quick", dependencies=[Depends(rate_limit("apikeys_verify", 5, 60))])
 async def quick_add_api_key(
     req: ApiKeyQuickCreate,
     user: GitHubUser | None = Depends(get_current_user),
 ):
-    """快速添加 API Key — 粘贴 Key，按 provider 预设自动补全 + 验证有效性。"""
+    """快速添加 API Key — 粘贴 Key，按 provider 预设自动补全 + 验证有效性。
+
+    限流：本端点会向外网发一次真实验证请求，无限制可被用来消耗额度（审计 P1-2）。
+    """
     _load_api_keys()
     uid = _resolve_user_id(user=user)
 
@@ -317,7 +392,8 @@ async def list_api_keys(user: GitHubUser | None = Depends(get_current_user)):
     ]
 
 
-@apikeys_router.post("/apikeys", response_model=ApiKeyResponse)
+@apikeys_router.post("/apikeys", response_model=ApiKeyResponse,
+                     dependencies=[Depends(rate_limit("apikeys_verify", 5, 60))])
 async def create_api_key(req: ApiKeyCreate, user: GitHubUser | None = Depends(get_current_user)):
     _load_api_keys()
     uid = _resolve_user_id(user=user)

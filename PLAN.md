@@ -3,20 +3,22 @@
 > ⚠️ **蓝图说明**：`docs/archive/ARCHITECTURE.md` 为早期废弃方案（Next.js + MUI），**一律不作参考**，以本文档为准。
 > 版本: v0.4 | 日期: 2026-07-23 | 项目目录: `math_agent/`（原 NB_project 已并入，GitHub 远程 `zhang66633/NB_project`）
 >
-> ### 📌 当前进度对齐（2026-09 校正快照；此前 2026-07-23 快照的 agent 数与页面清单已与实际脱节）
+> ### 📌 当前进度对齐（2026-10 校正快照；此前 2026-07-23 与 2026-09 快照的知识库数量、页面清单均已与实际脱节）
 > | 维度 | 状态 | 说明 |
 > |------|------|------|
 > | 后端核心编排 `workflow.py` | ✅ 完成 | 11 节点 StateGraph（classify/retrieve/plan + 7 个 agent 节点 + format_response）+ WS 推送 |
 > | Agent 节点 `nodes.py` | ✅ 完成 | 真实 LLM 调用：classify / retrieve / plan / analysis / modeling / data_preprocessing / solving / verification / export_results / writing / format_response |
 > | 知识库 RAG（代码） | ✅ 就绪 | 混合检索（向量+BM25+标签→RRF→MMR→时间衰减）+ Chroma + Tool 封装 + chain 均已实现 |
-> | 知识库（源数据） | ✅ P0 达标 | 47 张方法卡片 + 16 篇论文 + 27 道真题 + 3 个模板（YAML 真源入库） |
-> | WebSocket 进度推送 | ✅ 完成 | `ws.py` 订阅 Redis 转发；`task_end`/final_response 已推送 |
+> | 知识库（源数据） | ✅ P0 达标 | **86 张方法卡片 + 32 篇论文 + 38 道真题 + 3 个模板**（YAML 真源入库；2026-10 实测 `/api/knowledge/stats`，ID 零重复） |
+> | WebSocket 进度推送 | ✅ 完成 | `ws.py` 订阅 Redis 转发；`task_end`/final_response 已推送；按 token 归属校验属主 |
 > | 前端页面 | ✅ 完成 | 首页 / Chat / Solution / Knowledge / APIKeys / Settings / Login / 学习中心（learn + learn/:unitId）/ practice / progress |
 > | 学习系统 | ✅ 完成 | 61 个学习单元 + 183 题题库 + 掌握度追踪（BKT+艾宾浩斯衰减）+ 成就 + 技能树 |
-> | 认证 / 密钥管理 | ✅ 完成 | GitHub OAuth + `pages/apikeys` + `/api/apikeys`（支持多服务商） |
+> | 认证 / 密钥管理 | ✅ 完成 | GitHub OAuth + `pages/apikeys` + `/api/apikeys`（支持多服务商）；OAuth state 防 CSRF |
 > | 自由问答 SSE | ✅ 完成 | `/api/chat` 流式输出，chat/learning 多模式（teach 模式为 API 能力，无独立页面） |
 > | **LLM 工具调用** | ✅ 完成 | chat LLM 主动调用 KB 检索 + 数学计算（SymPy + cvxpy LP/QP/IP/SOCP）+ 联网搜索 |
 > | **端到端联调** | ✅ 完成 | REST + WS + SSE 全部打通；全链路验证输出完整 LaTeX 论文 |
+> | **安全加固** | ✅ 2026-10 | 任务/学习数据按用户隔离；沙箱后端源码隔离（防 `import app.config` 读 `.env`）；自定义 base_url SSRF 域名解析校验；密钥验证端点限流。详见 `docs/AUDIT-2026-10.md` |
+> | **API 端点总数** | ✅ **69 个** | 2026-10 实测 `/openapi.json`；下方 REST 表仅列核心组，learning/profile/conversations/export 四组见「学习系统 / 画像 / 会话 / 导出」小节 |
 
 ---
 
@@ -298,27 +300,30 @@ analysis_agent modeling_agent data_preprocessing solving_agent verification_ age
 
 ### REST
 
+> 2026-10 实测共 **69 个端点**（`/openapi.json`）。下表为核心组；learning / profile / conversations / export 四组共 30+ 路由见后文专节。
+> 所有 `/tasks/*` 与学习/画像类路由均按登录态归属隔离（未登录 → guest 桶），见 `docs/AUDIT-2026-10.md`。
+
 | Method | Path | 说明 |
 |--------|------|------|
 | `POST` | `/api/tasks` | 创建建模任务 |
 | `GET` | `/api/tasks/{id}` | 获取任务详情 |
 | `GET` | `/api/tasks/{id}/messages` | 获取历史消息 |
 | `POST` | `/api/tasks/{id}/cancel` | 取消任务 |
-| `GET` | `/api/tasks` | 任务列表 |
+| `GET` | `/api/tasks` | 任务列表（仅本人） |
 | `POST` | `/api/files/upload` | 上传文件 |
 | `GET` | `/api/files/{id}` | 下载文件 |
 | `GET` | `/api/apikeys` | API Key 列表 |
-| `POST` | `/api/apikeys` | 添加 API Key |
+| `POST` | `/api/apikeys` | 添加 API Key（限流 5 次/分钟） |
 | `DELETE` | `/api/apikeys/{id}` | 删除 API Key |
 | `GET` | `/api/apikeys/mine` | 获取当前激活的 Key |
-| `POST` | `/api/apikeys/quick` | 快速激活 Key |
+| `POST` | `/api/apikeys/quick` | 快速激活 Key（限流 5 次/分钟） |
 | `GET` | `/api/knowledge/search` | 知识库搜索（query expansion + LLM rerank + 结果缓存） |
 | `GET` | `/api/knowledge/stats` | 知识库统计 |
 | `POST` | `/api/knowledge/reindex` | 触发重新索引 |
 | `GET` | `/api/knowledge/methods\|papers\|templates\|problems` | 知识库内容列表/详情/raw |
 | `POST` | `/api/knowledge/upload` | 上传资料（PDF/OCR/Excel/DOCX 解析 → LLM 提取） |
 | `GET` | `/api/health` | 服务健康检查 |
-| `GET` | `/api/sandbox/status` | 沙箱执行模式（docker / subprocess） |
+| `GET` | `/api/sandbox/status` | 沙箱执行模式（docker / subprocess；含镜像就绪度） |
 | `POST` | `/api/chat` | SSE 流式对话（chat/learning 多模式，含 LLM 工具调用：KB 检索 + 数学计算 + 联网搜索） |
 
 ### 学习系统 / 画像 / 会话 / 导出（2026-07 后新增，共 30+ 路由）
@@ -334,7 +339,7 @@ analysis_agent modeling_agent data_preprocessing solving_agent verification_ age
 
 | Path | 说明 |
 |------|------|
-| `WS /api/ws` | 实时推送 agent 执行消息 |
+| `WS /api/ws/task/{task_id}` | 实时推送 agent 执行消息（?token= 带 JWT；按属主校验，非属主拒绝连接） |
 
 ### Auth
 

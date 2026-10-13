@@ -104,4 +104,4 @@ paper:
   - 蒙特卡洛在某方案上仿真比在优化中嵌入随机变量更实用——先优化再验证
   source: 2023年全国大学生数学建模竞赛C题优秀论文
   quality_rating: 4
-  problem_ref: 2023C
+  problem_ref: prob_001

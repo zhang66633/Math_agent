@@ -2,6 +2,7 @@
 
 > 2026-10 经 firecrawl 8 路深度搜索整理；原始搜索结果在 `.firecrawl/`（已 gitignore）。
 > 用途：① 扩充知识库 papers/problems；② 学习系统的资源推荐；③ 写作 agent 的格式参考。
+> 2026-10 补充：第八节为 GitHub 同源项目**实测**数据（已 shallow clone 验证），回答「能否直接拉取」。
 
 ## 一、竞赛真题与官方源
 
@@ -69,6 +70,39 @@
 3. **学习单元引用源**：DataWhale 导论各章链接挂到对应学习单元的「延伸阅读」；agent persona 里承诺的「推荐 B站视频/GitHub 仓库」有了具体弹药。
 4. **写作 agent**：CUMCMThesis 2026 模板作为论文写作的格式基准（当前 writing agent 输出 Markdown/LaTeX 混排）。
 5. **数据集推荐**：第三节来源接进数据预处理 agent 的系统提示，用户问「去哪找数据」时可直接给链接。
+
+## 八、GitHub 同源项目实测（2026-10，已实际 shallow clone 验证）
+
+> 结论先行：**技术上完全可以拉取**（三个仓库都 `git clone --depth 1` 成功，本机网络通 GitHub）。
+> 但**可拉取价值与仓库体积基本成反比**——45MB 的仓库只有 0.13MB 是文本，0.33MB 的仓库几乎全是文本。
+> 别按 star/体积判断，要看「文本知识密度」。
+
+| 仓库 | 文件 | 总计 | 文本 | 文本文件 | 内容实质 | 建议 |
+|------|------|------|------|----------|----------|------|
+| [jihe520/MathModelAgent-Example](https://github.com/jihe520/MathModelAgent-Example) | 80 | **45.70 MB** | 0.13 MB | 12 | 上游项目的**运行产物**：41 PNG(15MB) + 5 docx(17MB) + 4 PDF + 2 ipynb(5MB) | ❌ 不值得整体入库。唯一有价值的是 5 份 `questions.txt`（约 10KB）与 2 篇 `res.md` 成文论文（各 25-27KB） |
+| [Jaxon1216/mma-chart-templates](https://github.com/Jaxon1216/mma-chart-templates) | 32 | 3.06 MB | 0.04 MB | 16 | **14 类图型的 `template.py`**（bar/box_violin/bubble/dual_axis/grouped_bar/heatmap/line/multi_panel/network_graph/prediction_interval/radar/scatter_regression/stacked_bar/tornado_sensitivity），共约 35KB | ✅ **最值得拉取**。每个都是 `apply_chart_style()` + `create_chart()`，注释明写「运行时 agent 注入用」——与项目 `chart-standards` 技能（给规范）正好互补（给可跑代码） |
+| [LiXiang106991/MathModelAgent](https://github.com/LiXiang106991/MathModelAgent) | 40 | 0.33 MB | 0.32 MB | 37 | Claude Code Skills 集合 + 方法知识 md（`optimization.md` 7KB / `prediction.md` 4.6KB / `all in.md` 4.4KB）+ 数据预处理 tools | 🟡 体积友好，但是 prompt 材料，与项目自有 skills 体系重叠；方法 md 可作 KB 扩充种子，但需走 LLM 提取（花钱） |
+
+### 8.1 一个具体的高价值机会：真题库停在 2023
+
+Example 仓库里有 **2024 国赛 C 题、2025 国赛 A/B/C 题、2023 华数杯 C 题**的题面原文，
+而项目 `knowledge_base/problems/` 最新只到 **2023**（实测年份分布 2002-2023，论文同）。
+2025/2026 赛题官网已发布（见第一节），这是 KB 最明显的一块空缺。
+
+**但先别急着导**——本项目自己踩过的坑（见末节）：目录名不可信。
+`2023 华数杯` 这类赛事名在 KB 现有四分类（国赛/美赛/研赛/华中赛）里没有对应项，
+**导入前必须先读原文核实赛事归属**，否则会造出无法被 `competition` 字段正确归档的脏数据。
+
+### 8.2 拉取方式建议
+
+- **不要整体 clone 进仓库**：45MB 里 99.7% 是二进制产物，会把仓库撑爆且无检索价值。
+- **按需取文件**：需要哪份就单独抓（`gh api` / raw 链接 /  shallow clone 到 TEMP 再筛），
+  文本进 Git、二进制留库外。
+- **绘图模板的落地形态**：把 14 个 `template.py` 折进 `chart-standards` 技能或新建
+  `chart-templates` 技能。**注意代价**：该技能挂在 solving / data_preprocessing 两个 agent 上，
+  正文变长会抬高每次调用的 prompt 成本，建议只放「按图型索引 + 按需展开」而不是全量铺开。
+
+---
 
 ## 搜索方法论备注
 

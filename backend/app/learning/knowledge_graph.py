@@ -108,12 +108,21 @@ def build_graph_from_method_cards(kb_dir: str) -> KnowledgeGraph:
         return graph
 
     cards: list[dict] = []
-    for yf in sorted(methods_path.glob("*.yaml")):
+    # 必须 rglob：方法卡片按类别分子目录存放（优化/预测/评价/…），根目录下
+    # 直接一个 yaml 都没有。用 glob("*.yaml") 会一张卡都读不到，图谱恒为空
+    # 且不报错——latent trap，曾长期无人调用所以没暴露（2026-10 审计）。
+    for yf in sorted(methods_path.rglob("*.yaml")):
+        if "_source_skill_docs" in str(yf) or yf.name.startswith("_"):
+            continue
         try:
             with open(yf, encoding="utf-8") as f:
-                card = yaml.safe_load(f)
-                if card:
-                    cards.append(card)
+                raw = yaml.safe_load(f)
+            # 必须剥掉 method_card 根键：字段都在它下面。之前直接拿整篇 dict
+            # 去 .get("id")，永远得到空串 → 每张卡都被 `if not cid: continue`
+            # 跳过，图谱照样是空的（2026-10 审计发现的第二个叠加 bug）。
+            card = raw.get("method_card") if isinstance(raw, dict) else None
+            if isinstance(card, dict) and card:
+                cards.append(card)
         except Exception:
             continue
 
@@ -126,6 +135,8 @@ def build_graph_from_method_cards(kb_dir: str) -> KnowledgeGraph:
         category = ""
         cats = card.get("category", [])
         if cats:
+            # 取第一个：类别归一化（审计 2026-10）只会**追加**规范父类到末尾，
+            # 不动原有顺序，所以 cats[0] 始终是卡片自己的细分类别。
             category = cats[0]
 
         node = SkillNode(
@@ -162,7 +173,18 @@ def build_graph_from_method_cards(kb_dir: str) -> KnowledgeGraph:
     return graph
 
 
-def _difficulty_from_tags(d: str) -> int:
+def _difficulty_from_tags(d) -> int:
+    """难度归一到 1-3（SkillNode 的刻度）。
+
+    兼容两种来源：
+      - MethodCard.difficulty 是 int 1-5（app.knowledge.schemas）
+      - 学习单元的 difficulty 是字符串（beginner/intermediate/advanced/competition）
+    之前只处理字符串，方法卡的 int 全落进 mapping.get(d, 1) 变成 1——
+    图谱上每张卡都显示「入门」（2026-10 审计发现的第三个叠加 bug）。
+    """
+    if isinstance(d, int):
+        # 1-5 → 1-3
+        return max(1, min(3, round(d * 3 / 5)))
     mapping = {"beginner": 1, "intermediate": 2, "advanced": 3, "competition": 3}
     return mapping.get(d, 1)
 

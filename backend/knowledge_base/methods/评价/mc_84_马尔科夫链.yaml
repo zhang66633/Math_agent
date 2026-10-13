@@ -3,6 +3,7 @@ method_card:
   name_en: Markov Chain
   category:
   - 综合评价
+  - 评价
   principle: '马尔科夫链是状态空间中从一个状态转移到另一个状态的随机过程。
 
 

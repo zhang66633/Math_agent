@@ -3,6 +3,7 @@ method_card:
   name_en: Cellular Automata, CA
   category:
   - 综合评价
+  - 评价
   principle: '元胞自动机是离散动力系统，由元胞空间、状态集、邻域和演化规则组成。
 
 

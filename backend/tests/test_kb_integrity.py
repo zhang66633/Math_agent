@@ -315,6 +315,79 @@ def test_knowledge_base_is_not_empty():
     assert len(_kb_files("templates")) >= 3, "模板数量异常偏少"
 
 
+# ── 类别归一化（审计 2026-10）──────────────────────────
+
+# 细分类别 → 必须同时出现的规范父类。与 scripts/_audit_category_migrate.py 同源。
+_SYNONYM_TO_CANONICAL = {
+    "优化算法": ["优化"], "数学规划": ["优化"], "启发式算法": ["优化"],
+    "元启发式": ["优化"], "群体智能": ["优化"],
+    "时间序列": ["预测"], "时间序列分析": ["预测"],
+    "预测与分类": ["预测", "机器学习"],
+    "统计": ["统计分析"], "信息论": ["统计分析"], "小样本": ["统计分析"],
+    "数据降维": ["统计分析", "机器学习"],
+    "图论与网络": ["图论"],
+    "分类": ["机器学习"], "分类与聚类": ["机器学习"], "无监督学习": ["机器学习"],
+    "评价决策": ["评价"], "综合评价": ["评价"], "多准则决策": ["评价"],
+    "主观赋权": ["评价"], "客观赋权": ["评价"], "效率分析": ["评价"], "模糊数学": ["评价"],
+    "随机模拟": ["随机过程"], "排队论": ["随机过程"],
+}
+
+
+def test_canonical_categories_cover_synonyms():
+    """类别归一化棘轮：标了细分类别的卡必须同时带规范父类。
+
+    为什么重要：loader.get_methods_by_category 与 knowledge_graph.get_nodes_by_category
+    都是**精确匹配**，不同时带父类的话传「优化」找不到标「优化算法」的卡。
+    """
+    missing = []
+    for rel, _d, card, err in _load("methods", "method_card"):
+        if err:
+            continue
+        for c in card.category:
+            for canon in _SYNONYM_TO_CANONICAL.get(c, []):
+                if canon not in card.category:
+                    missing.append(f"{rel}: 有 {c!r} 但缺 {canon!r}")
+    assert not missing, "类别归一化回退:\n" + "\n".join(missing)
+
+
+def test_get_methods_by_category_exact_match_works():
+    """规范类别名必须能精确检索到对应卡片（归一化的实际收益）。"""
+    from app.knowledge.loader import KnowledgeBaseLoader
+
+    loader = KnowledgeBaseLoader(KB_ROOT)
+    for canon in ("优化", "预测", "评价", "统计分析", "图论", "机器学习"):
+        found = loader.get_methods_by_category(canon)
+        assert found, f"get_methods_by_category({canon!r}) 返回空——精确匹配失效"
+        # 每张命中的卡都得真的带这个类别
+        assert all(canon in c.category for c in found)
+
+
+def test_knowledge_graph_builds_non_empty():
+    """技能树图谱不得为空。
+
+    曾因 methods_path.glob("*.yaml") 非递归而一张卡都读不到——卡片全在
+    methods/<类别>/ 子目录里，根目录下 0 个 yaml。该缺陷长期无人调用所以没暴露。
+    """
+    from app.learning.knowledge_graph import build_graph_from_method_cards
+
+    # 参数名 kb_dir 有点误导：它实际是「知识库根」（函数内部拼 <kb_dir>/methods），
+    # 即 backend/knowledge_base，不是 backend/。
+    kb_dir = KB_ROOT
+    assert (kb_dir / "methods").is_dir(), f"{kb_dir}/methods 不是目录"
+    graph = build_graph_from_method_cards(str(kb_dir))
+    assert graph.nodes, "知识图谱为空——glob 可能又变成了非递归"
+    assert len(graph.nodes) == len(_kb_files("methods")), (
+        f"节点数 {len(graph.nodes)} != 卡片数 {len(_kb_files('methods'))}"
+    )
+    assert graph.edges, "图谱没有任何边（related_cards 应产出横向关联）"
+
+    # 难度不得全是 1：MethodCard.difficulty 是 int 1-5，_difficulty_from_tags 曾只认
+    # 字符串，导致 int 全落进 mapping.get(d, 1) → 每张卡都显示「入门」。
+    diffs = {n.difficulty for n in graph.nodes.values()}
+    assert diffs != {1}, f"所有节点难度都是 1，难度映射可能又坏了: {sorted(diffs)}"
+    assert all(1 <= d <= 3 for d in diffs), f"难度越界: {sorted(diffs)}"
+
+
 if __name__ == "__main__":
     for _fn in [
         test_all_yaml_validate_against_schemas,
@@ -328,6 +401,9 @@ if __name__ == "__main__":
         test_content_gaps_do_not_regress,
         test_filename_id_mismatch_does_not_regress,
         test_knowledge_base_is_not_empty,
+        test_canonical_categories_cover_synonyms,
+        test_get_methods_by_category_exact_match_works,
+        test_knowledge_graph_builds_non_empty,
     ]:
         _fn()
         print(f"PASSED {_fn.__name__}")

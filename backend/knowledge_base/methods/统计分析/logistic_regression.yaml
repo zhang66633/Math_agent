@@ -5,6 +5,7 @@ method_card:
   category:
   - 统计分析
   - 分类
+  - 机器学习
   principle: 'Logistic 回归用于二分类或多分类问题，通过 Sigmoid 函数将线性预测值映射到 (0,1) 概率区间。
 
 

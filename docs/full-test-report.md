@@ -57,7 +57,7 @@
 |------|------|------|
 | 前端阅读/对话 | marked + marked-katex-extension + DOMPurify | ✅ 真实论文片段（`aligned` 环境、表格内公式、正文行内公式）渲染为 `.katex`，无 `katex-error`，`$$` 不残留；**KaTeX 的 `style` 与 MathML `<math>` 未被 DOMPurify 洗掉**（配置漂移护栏） |
 | 打印/导出 PDF | `exportPaper.ts` 预渲染 HTML + 内联 katex.css（离线自足） | ✅ 代码路径已不依赖任何 CDN |
-| 后端 DOCX | 公式降级为可读文本 `[公式: ...]` | ⚠️ 见「已知限制」 |
+| 后端 DOCX | 独立公式 → Word 原生公式（OMML）；行内公式 → 可读文本 | ✅ 已升级，见第七节 |
 
 ---
 
@@ -65,7 +65,7 @@
 
 | 项 | 说明 |
 |----|------|
-| DOCX 里的公式是文本 | Word 无法承载 LaTeX，目前降级为 `[公式: \max Z = ...]`。语义不丢、可读，但不是「排版好的公式」。若要提升可走 Word 原生公式（OMML）；前端 PDF 路径已是真渲染。 |
+| ~~DOCX 里的公式是文本~~ | **已解决**（见第七节）：独立公式 `$$...$$` 已升级为 **Word 原生公式（OMML）**，可编辑可编号。仍受两点约束：① 需要 Office 自带的 `MML2OMML.XSL`，缺失时自动降级为文本；② 行内公式 `$...$` 仍降级为可读文本（避免破坏段落排版）。 |
 | 未测：`POST /api/knowledge/reindex` | 会重建向量索引（调用嵌入接口、需数分钟）。知识库检索是答辩演示环节，重建期间/失败时有影响演示的风险；YAML 是唯一真源、索引可重建，故本次不冒险。 |
 | 未测：GitHub OAuth 登录 | 需真实 OAuth 凭据与回调域名，本机无法端到端验证；访客模式已实测可用。 |
 | 未测：`/api/knowledge/import/confirm` | 会把抽取结果写入知识库真源 YAML（用户真实数据），故只验证到接口存在与契约。 |
@@ -102,4 +102,56 @@ node node_modules/vitest/vitest.mjs run           # 23 例（markdown 17 + reque
 | `backend/tests/test_export_docx_latex.py` | 13 例：中文文件名响应头（latin-1 可编码）、DOCX 表格与行内格式、LaTeX 显式块提取、ctexart 骨架与公式保留、Python 代码块进 verbatim |
 | `backend/tests/test_export_md.py`（既有） | 行内解析 5 例，继续通过（re-export 兼容） |
 | `frontend/src/utils/markdown.test.ts` | 新增 2 例：真实论文片段渲染、DOMPurify 未洗掉 KaTeX 的 style/MathML |
-| `backend/app/services/md_docx.py` | 本次新增的单一真源（DOCX 转换 + 下载头 + LaTeX 生成） |
+| `backend/app/services/md_docx.py` | 本次新增的单一真源（DOCX 转换 + 下载头 + LaTeX 生成 + OMML 公式） |
+
+---
+
+## 七、追加升级与补充实测（同日第二轮）
+
+### 7.1 升级：DOCX 公式 → Word 原生公式（OMML）
+
+| 项 | 内容 |
+|----|------|
+| 链路 | LaTeX →（`latex2mathml`）MathML →（Office 自带 `MML2OMML.XSL`，lxml XSLT）OMML → 注入 docx 段落 |
+| 生效范围 | 独立公式块 `$$...$$` 转为**原生公式**（居中、可编辑、可编号） |
+| 降级链 | 缺 `latex2mathml` / 缺 `lxml` / 找不到 XSL / 转换失败 → 自动回落为文本，**绝不阻断导出** |
+| XSL 定位 | 先读环境变量 `MML2OMML_XSL`，再扫 Office 常见路径（实测命中 `Office16\MML2OMML.XSL`） |
+| 实测证据 | 真实任务 `8a41a119` 导出的 215 KB docx 内含 **`<m:oMath>` 8 处**、`[公式: ` 残留为 False、表格 11 个完好 |
+| 依赖声明 | 新增可选 extra：`backend[export] = latex2mathml + lxml`（缺失时功能降级，不影响启动） |
+
+> 行内公式 `$...$` 仍降级为可读文本——插入行内 OMML 会打乱段落排版，收益低于风险，故保持不变。
+
+### 7.2 修复：联网搜索在本机网络下「必失败」
+
+- **实测现象**：原实现依赖 `duckduckgo-search`，实测该包已改名 `ddgs`，且旧包走 Bing 后端直接返回 `None`；换 `ddgs` 后仍旧失败——其后端 startpage / yahoo 连接超时 20 s+。
+- **可达性探测结论**（本机）：`cn.bing.com` 0.4 s ✅、`www.so.com` 1.3 s ✅、`www.sogou.com` 0.9 s ✅、`html.duckduckgo.com` 超时 ❌、`baidu` 返回 1.5 KB（反爬）⚠️。
+- **修复**：搜索工具改为**多后端降级**——`cn.bing.com`（主）→ `360`（备）→ `ddgs`（网络允许时）；全失败时返回**可操作的提示**（建议改用平台知识库），而不是一句「搜索失败」。
+- **实测证据**：修复后两次查询均 0.4 s 返回真实结果（`NSGA-II 多目标优化` 命中知乎与百科条目）。
+
+### 7.3 韧性：LLM 调用的瞬时链路错误
+
+- **实测现象**：网络抖动期间提交任务，`analysis_agent` 连续两次流式调用抛
+  `httpx2.DecodingError: zstd decompressor error: Unknown frame descriptor`，重试耗尽后**整个任务 error**
+  （各节点输出为空）。同一代码在链路恢复后重跑即成功（任务 `8a41a119` completed），说明是**间歇性链路问题**，不是确定性缺陷。
+- **修复**：
+  1. 新增瞬时错误识别（zstd / 解码 / 连接 / 超时 / 429 / 5xx 等特征）；
+  2. 瞬时错误给更长退避（1s、2s → 3s、6s、12s）——网络抖动常需数秒才恢复，短间隔重试等于一次性烧光额度；
+  3. 流式路径重试耗尽且属瞬时错误时，**降级为非流式 `invoke` 兜底**并把完整内容推给前端：**任务能完成比逐字动画重要**。
+- **补充实测**：对照实验（真实 Key）默认头与 `Accept-Encoding: gzip, deflate` 各 3 次，流式 12/12 全成功——证明无需靠改请求头绕过，韧性兜底才是正解。
+
+### 7.4 本轮补充实测结果
+
+| 实测项 | 结果 |
+|--------|------|
+| 方案模式 | 任务 `8a41a119` **completed**（14:30:24 → 14:33:04，约 2.7 分钟）；analysis 2177 / model 2030 / solving 6829 / verification 3541 / writing 29614 字符；技能目录 3 项；5 个 artifacts |
+| 知识库检索 | 三查三中：`蔬菜 自动定价` → 真题+论文；`辛烷值 优化` → 两篇同题论文进前列；`NSGA-II 多目标` → 方法卡；耗时 2.9–11.2 s（首查未预热） |
+| 联网搜索 | 修复前必失败；修复后 0.4 s 返回真实结果（详见 7.2） |
+| 回归 | 后端 **191** 用例 / 28 文件全绿、ruff 0 error；前端 23 例、vue-tsc / biome 0 error |
+
+### 7.5 环境依赖变更
+
+| 包 | 用途 | 声明位置 |
+|----|------|----------|
+| `ddgs>=9.0.0` | 联网搜索可选后端（主通道是内置 cn.bing.com） | `backend[search]` |
+| `latex2mathml>=3.0.0` + `lxml>=5.0.0` | Word 原生公式 | `backend[export]` |
+| 安装方式 | `uv pip install --python backend/.venv/Scripts/python.exe ddgs latex2mathml`（该 venv 由 uv 创建，**没有 pip**，须用 `uv pip`） | — |

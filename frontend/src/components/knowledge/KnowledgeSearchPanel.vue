@@ -72,7 +72,39 @@
               <span class="text-[10px] text-muted-foreground/60">该卡片的长文即此学习单元正文</span>
             </div>
             <p class="leading-relaxed">{{ detailData.data.principle }}</p>
+            <!-- 核心公式：latex 走统一 markdown 管线（$...$/$$...$$ → KaTeX） -->
+            <div v-if="detailData.data.formulas?.length" class="rounded-md border border-border p-4">
+              <h4 class="font-display font-medium text-sm mb-2">核心公式</h4>
+              <div class="space-y-2">
+                <div v-for="(f, i) in detailData.data.formulas" :key="i" class="rounded-sm bg-muted/30 p-3">
+                  <p v-if="f.name" class="font-mono text-xs mb-1">{{ f.name }}</p>
+                  <div class="font-serif text-sm mb-1" v-html="renderFormula(f.latex)" />
+                  <p v-if="f.description" class="text-xs text-muted-foreground">{{ f.description }}</p>
+                </div>
+              </div>
+            </div>
+            <div v-if="detailData.data.typical_scenarios?.length"><h4 class="font-display font-medium text-sm mb-1">典型场景</h4><ul class="list-disc list-inside text-muted-foreground text-sm"><li v-for="(s, i) in detailData.data.typical_scenarios" :key="i">{{ s }}</li></ul></div>
             <div><h4 class="font-display font-medium text-sm mb-1">适用条件</h4><ul class="list-disc list-inside text-muted-foreground text-sm"><li v-for="c in detailData.data.applicable_when" :key="c">{{ c }}</li></ul></div>
+            <div v-if="detailData.data.not_applicable_when?.length"><h4 class="font-display font-medium text-sm mb-1">不适用情形</h4><ul class="list-disc list-inside text-muted-foreground text-sm"><li v-for="(c, i) in detailData.data.not_applicable_when" :key="i">{{ c }}</li></ul></div>
+            <!-- 常见错误与对策 -->
+            <div v-if="detailData.data.common_mistakes?.length" class="rounded-md border border-amber-200 bg-amber-50/30 p-4">
+              <h4 class="font-display font-medium text-sm mb-2 text-amber-800">常见错误与对策</h4>
+              <div class="space-y-2">
+                <div v-for="(m, i) in detailData.data.common_mistakes" :key="i" class="text-sm">
+                  <p class="text-amber-700 flex items-start gap-1.5"><AlertTriangle class="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-500" />{{ m.mistake }}</p>
+                  <p v-if="m.solution" class="text-muted-foreground text-xs mt-0.5">→ {{ m.solution }}</p>
+                </div>
+              </div>
+            </div>
+            <!-- 代码示例 -->
+            <div v-if="detailData.data.code_snippets?.length" class="rounded-md border border-border p-4">
+              <h4 class="font-display font-medium text-sm mb-2">代码示例</h4>
+              <div v-for="(c, i) in detailData.data.code_snippets" :key="i" class="mb-3 last:mb-0">
+                <p v-if="c.description" class="text-xs text-muted-foreground mb-1">{{ c.description }}</p>
+                <pre class="rounded-sm bg-zinc-950 p-3 text-xs text-zinc-300 overflow-x-auto"><code>{{ c.code }}</code></pre>
+              </div>
+            </div>
+            <div v-if="detailData.data.related_cards?.length" class="text-xs text-muted-foreground">关联卡片：{{ detailData.data.related_cards.join("、") }}</div>
           </template>
           <template v-if="detailData.type === 'paper'">
             <div class="flex items-center gap-3 flex-wrap mb-3">
@@ -206,6 +238,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { renderFormula } from "@/utils/kbFormula";
 import {
   AlertTriangle,
   BookOpen,

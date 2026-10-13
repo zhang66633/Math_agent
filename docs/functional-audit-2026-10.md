@@ -10,9 +10,9 @@
 |------|------|------|------|
 | **P0 功能缺陷** | 1 | **86 张方法卡中 22 张（25.6%）详情接口必返 500**，并存在「编辑→保存」**抹掉公式/代码字段**的数据毁灭路径 | ✅ **已修复**（`88d037d`，86/86 复测 200） |
 | **P0 回归** | 1 | 访客任务属主桶漂移（`"guest"` vs `"default"`）→ 匿名任务建完即 404，方案模式对默认用户形态全不可用 | ✅ **已修复**（见 9.1，含 3 例回归测试） |
-| **P1 死功能** | 1 | Working Memory「问题状态文档」永不更新——生产数据实证所有真实任务的 `problem_doc.md` 都是初始模板 | ⚠️ 未修（见第四节） |
+| **P1 死功能** | 1 | Working Memory「问题状态文档」永不更新——生产数据实证所有真实任务的 `problem_doc.md` 都是初始模板 | ✅ **已修**（改确定性拼装 + status 端点暴露，见第四节） |
 | **P1 进行中缺陷** | 1 | 新增 Key 的 DNS SSRF 校验在本机误杀全部真实服务商（fake-ip `198.18.x.x` 被判内网），`test_apikeys_ssrf` 1 例失败 | ⚠️ 你的在改项，见第十节 |
-| **P2** | 3 | 6 个孤儿端点无任何调用方；测试残渣落进运行数据目录；`pytest.ini` 的 `-q` 吞掉汇总行 | ⚠️ 未修 |
+| **P2** | 4 | 6 个孤儿端点无调用方；测试残渣落进运行数据目录；方法卡详情有数据但前端不渲染 | 前两项已修/已清，孤儿端点待你定夺 |
 | **P3** | 2 | 前端声明了 API 从不返回的类型字段；对已完成任务 cancel 返回 200 | ⚠️ 未修 |
 
 **测试面全绿**：后端 **221 passed**（含本轮新增 7 个全量枚举用例）、ruff 0 error、前端 typecheck / biome / vitest(23) / build 全过；
@@ -108,9 +108,9 @@ mc_007.code_snippets[0]   = {"code": "# Python: 0-1背包 ...", "language": "", 
 
 ---
 
-## 四、P1：Working Memory 的「问题状态文档」是死功能
+## 四、P1：Working Memory 的「问题状态文档」是死功能 ✅ 已修
 
-`_save_working_memory`（`node_helpers.py:221-223`）想用 `asyncio.get_event_loop().run_in_executor(...)`
+`_save_working_memory`（`node_helpers.py`）想用 `asyncio.get_event_loop().run_in_executor(...)`
 异步触发 `update_problem_doc`（LLM 整体重写问题状态文档），但：
 
 - 生产里节点跑在 langgraph 的线程池 worker 里，**该线程没有运行中的事件循环** →
@@ -123,21 +123,40 @@ mc_007.code_snippets[0]   = {"code": "# Python: 0-1背包 ...", "language": "", 
 检查点（`save_checkpoint`）本身是好的，`/api/tasks/{id}/status` 的断点续做依赖它，功能正常。
 死掉的只是「LLM 持续维护的问题状态文档」这半边。
 
-**修复建议**：改成 `threading.Thread(target=..., daemon=True).start()` 或
-`concurrent.futures.ThreadPoolExecutor` 直接提交，不依赖调用线程的事件循环；同时给
-`update_problem_doc` 找一个真实读者（或明确删掉这半边，别留悬空设计）。
+### 修复取舍与做法
+
+三条路：① 修好机制（threading 直接提交）并启用 LLM 重写；② 删掉这半边；③ 换成零成本确定性版本。
+选 ③，理由：**启用 ① 等于每个任务多约 7 次真实 LLM 调用，而读者依然是零**——花钱没人看；
+② 会丢掉一个本来有价值的设计（`memory-context-guide.md` §5.1/§5.2 把它定位成编排器的滚动上下文）。
+
+做法（`working_memory.py` + `node_helpers.py` + `tasks.py`）：
+
+- `update_problem_doc`（LLM 重写）**删除**，换成 `refresh_problem_doc()`：按 `STAGE_ORDER`
+  读各检查点的 `output_summary` 拼装同一份 Markdown，纯文件 IO、毫秒级、**不调 LLM**。
+- 刷新动作放进 `save_checkpoint` 内部（而不是留给调用方）——否则「存了检查点却忘了刷文档」
+  会让文档悄悄过期，那正是死功能时代的症状。这条是测试逼出来的：第一版把刷新放在
+  `_save_working_memory` 里，自测直接抓到「单独调 save_checkpoint 时文档不更新」。
+- `init_session` 同时写 `meta.json`（原始问题等）——拼装时要引用原始问题，而它原来只存在于
+  会被覆盖的初始模板里，写完就再也读不回来。
+- 给文档一个真实读者：`GET /api/tasks/{id}/status` 新增 `problem_doc` 字段。
+- `REWRITE_PROMPT` / `_backup_problem_doc` / 同文件的死代码 `save_messages` / `load_messages`
+  （零调用方）一并删除；文件顶部留「墓碑注释」写清废弃原因，免得后人重新踩。
+
+测试 `tests/test_working_memory.py`（5 例）：拼装内容与阶段数、幂等、无会话时 no-op、
+**「节点保存后文档必须真的更新」**（死功能回归护栏）、status 端点暴露 problem_doc。
 
 ---
 
 ## 五、P2/P3 明细
 
-| # | 级别 | 问题 | 证据 / 建议 |
-|---|------|------|------------|
-| 1 | P2 | **6 个孤儿端点**：`POST /api/knowledge/import/{confirm,extract-text,method,paper}`、`POST /api/learning/path/generate`、`PUT /api/profile/roles` —— 前端与 `backend/scripts/` 均无调用方 | 前端走的是 `/knowledge/upload` + `/knowledge/jobs/{id}` 异步任务流；import/* 是被取代的旧同步路径。建议：确认无外部消费者后删除，或在 docs 标注「预留 API」 |
-| 2 | P2 | **测试残渣落进运行数据目录**：`backend/data/` 下与 `learning.db`、`sessions.db` 混放着 `test_learning*.db`、`test_sessions_*`、`diag_*` 等测试产物 | 测试应把临时库指到 tmp_path（`test_learning_store.py` 等已有此模式），别让运行目录同时充当测试草稿本 |
-| 3 | P2 | `pytest.ini` 的 `addopts = -q` 吞掉 `N passed` 汇总行，只能靠退出码判断成败 | 改 `-ra` 或去掉 `-q`（上一轮审计已提，未落地） |
-| 4 | P3 | 前端 `LearningPath` 接口声明 `total_units/completed_units/overall_mastery`，后端从不返回 → store 里 `?? 0` 兜底 | 学习页未渲染这三个字段，暂无用户可见影响；删掉死类型字段或让后端补返回 |
-| 5 | P3 | 对已完成任务 `POST /cancel` 返回 200「任务已取消」 | 幂等无害，建议改 409 |
+| # | 级别 | 问题 | 证据 / 建议 | 状态 |
+|---|------|------|------------|------|
+| 1 | P2 | **6 个孤儿端点**：`POST /api/knowledge/import/{confirm,extract-text,method,paper}`、`POST /api/learning/path/generate`、`PUT /api/profile/roles` —— 前端与 `backend/scripts/`、tests 均无调用方 | 前端走的是 `/knowledge/upload` + `/knowledge/jobs/{id}` 异步任务流；import/* 是被取代的旧同步路径 | ⚠️ 未处置（删 HTTP 契约是产品决策，留给你定） |
+| 2 | P2 | **测试残渣落进运行数据目录**：`backend/data/` 下与 `learning.db`、`sessions.db` 混放 `test_learning*.db` 等 | 根因：`test_learning_store.py` 的 `__main__` 直跑块写死 `Path("data")`（pytest 侧本就正确用 tmp_path） | ✅ 已修：直跑块改 `tempfile.TemporaryDirectory`；存量 8 项残渣已清 |
+| 3 | P2 | `pytest.ini` 的 `addopts = -q` 吞掉 `N passed` 汇总行 | 只能靠退出码判断成败 | ✅ 已由你改为 `-ra` |
+| 4 | P3 | 前端 `LearningPath` 接口声明 `total_units/completed_units/overall_mastery`，后端从不返回 → store 里 `?? 0` 兜底 | 学习页未渲染这三个字段，暂无用户可见影响 | ⚠️ 未修 |
+| 5 | P3 | 对已完成任务 `POST /cancel` 返回 200「任务已取消」 | 幂等无害，建议改 409 | ⚠️ 未修 |
+| 6 | P2 | **方法卡详情有数据但不渲染**：`formulas` / `common_mistakes` / `code_snippets` / `typical_scenarios` / `not_applicable_when` / `related_cards` 前端无展示位 | 同 dialog 的 paper 分支把这些字段渲染得很完整 | ✅ 已修：按 paper 分支规格补齐，公式走统一 markdown 管线（KaTeX） |
 
 ---
 

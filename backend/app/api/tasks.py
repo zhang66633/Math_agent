@@ -551,29 +551,35 @@ async def export_document(
 
 
 def _export_latex(full_text: str, writing_output: str) -> Response:
-    """从输出中提取/生成 LaTeX 并返回 .tex 下载。"""
-    # 优先提取 writing 输出中的 LaTeX
-    latex = writing_output or full_text
+    """从输出中提取/生成 LaTeX 并返回 .tex 下载。
 
-    # 尝试从 ```latex ... ``` 或 ```tex ... ``` 代码块中提取
-    latex_match = re.search(r"```(?:latex|tex)?\s*\n(.*?)```", latex, re.DOTALL)
-    if latex_match:
-        latex = latex_match.group(1).strip()
-    else:
-        # 检查是否已经以 \documentclass 开头
-        if not latex.strip().startswith("\\documentclass"):
-            # 把全文当作 LaTeX-like 内容，包裹最小文档框架
-            latex = (
-                r"\documentclass[12pt,a4paper]{ctexart}"
-                r"\usepackage{amsmath,amssymb,graphicx,booktabs,geometry}"
-                r"\geometry{margin=2.5cm}"
-                r"\begin{document}" + latex + r"\end{document}"
-            )
+    修复历史缺陷：旧实现的代码块正则把语言标记写成可选（```(?:latex|tex)?），
+    于是会匹配**任意**首个代码块——实测导出的 .tex 实际是 Python 代码。
+    现在的顺序：显式 ```latex/tex 代码块 → 已是完整文档则原样 → 由 markdown
+    生成可编译的 ctexart 文档（标题映射章节、表格转 tabular、公式原样保留）。
+    """
+    from app.services.md_docx import (
+        content_disposition,
+        extract_explicit_latex,
+        markdown_to_latex,
+    )
+
+    text = writing_output or full_text
+    latex = extract_explicit_latex(text)
+    if not latex:
+        if text.lstrip().startswith("\\documentclass"):
+            latex = text
+        else:
+            latex = markdown_to_latex(text)
 
     return Response(
         content=latex.encode("utf-8"),
         media_type="application/x-latex; charset=utf-8",
-        headers={"Content-Disposition": "attachment; filename=modeling_paper.tex"},
+        headers={
+            "Content-Disposition": content_disposition(
+                "modeling_paper.tex", fallback="modeling_paper.tex"
+            )
+        },
     )
 
 
@@ -607,10 +613,17 @@ def _resolve_image_path(url: str) -> Path | None:
 
 
 def _export_docx(content: str, title: str = "数学建模方案") -> StreamingResponse:
-    """将 Markdown 转换为 Word .docx 并返回（支持插入图表）。"""
+    """将 Markdown 转换为 Word .docx 并返回（支持插入图表）。
+
+    解析走 `app/services/md_docx.py` 的共享实现（单一真源）。旧版本自己写了一套
+    「简单转换」：**跳过表格**、不解析行内标记，导致同一篇论文走
+    `/api/export/docx` 与 `/api/tasks/{id}/export?format=docx` 的结果不一致。
+    """
     from docx import Document
     from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.shared import Inches, Pt
+    from docx.shared import Pt
+
+    from app.services.md_docx import content_disposition, markdown_to_docx
 
     doc = Document()
 
@@ -624,66 +637,22 @@ def _export_docx(content: str, title: str = "数学建模方案") -> StreamingRe
     heading = doc.add_heading(title, level=1)
     heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    def _insert_image(url: str) -> None:
-        """解析 markdown 图片语法并插入本地图表（居中，最大宽度 5.5 英寸）。"""
-        try:
-            path = _resolve_image_path(url)
-            if not path:
-                return
-            doc.add_picture(str(path), width=Inches(5.5))
-            doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
-        except Exception:
-            pass  # 图片插入失败不阻断导出
+    # 共享解析器：标题/列表/表格/引用/代码块/行内格式 + 图片（本地路径由解析器注入）
+    markdown_to_docx(doc, content, image_resolver=_resolve_image_path)
 
-    # 简单 Markdown → docx 转换
-    lines = content.split("\n")
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            continue
-
-        if stripped.startswith("```"):
-            continue  # skip code fences
-
-        # 图片：![说明](/api/task_files/... 或 /api/images/...) → 插入图表
-        img_match = re.match(
-            r"^!\[[^\]]*\]\((/api/(?:task_files|images)/[^)\s]+)\)$", stripped
-        )
-        if img_match:
-            _insert_image(img_match.group(1))
-            continue
-
-        if stripped.startswith("### "):
-            doc.add_heading(stripped[4:], level=3)
-        elif stripped.startswith("## "):
-            doc.add_heading(stripped[3:], level=2)
-        elif stripped.startswith("# "):
-            doc.add_heading(stripped[2:], level=1)
-        elif stripped.startswith("- ") or stripped.startswith("* "):
-            doc.add_paragraph(stripped[2:], style="List Bullet")
-        elif re.match(r"^\d+\.\s", stripped):
-            doc.add_paragraph(re.sub(r"^\d+\.\s", "", stripped), style="List Number")
-        elif stripped.startswith("|"):
-            # 跳过表格（简化处理）
-            continue
-        elif stripped.startswith("$$") or stripped.startswith("$"):
-            # 公式保留原文
-            p = doc.add_paragraph()
-            run = p.add_run(stripped)
-            run.font.size = Pt(11)
-            run.italic = True
-        else:
-            p = doc.add_paragraph(stripped)
-
-    # 输出到 buffer
     buffer = io.BytesIO()
     doc.save(buffer)
     buffer.seek(0)
 
+    # 标题多为中文（题目文本），不能直接进 HTTP 头（latin-1），走 RFC 5987
     return StreamingResponse(
         buffer,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": "attachment; filename=modeling_solution.docx"},
+        headers={
+            "Content-Disposition": content_disposition(
+                f"{title}.docx", fallback="modeling_solution.docx"
+            )
+        },
     )
 
 

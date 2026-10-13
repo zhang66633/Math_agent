@@ -27,6 +27,11 @@ pnpm lint                           # biome check src
 
 `type: 中文描述`（feat/fix/chore/docs/refactor）。直接推 main，先 pull 再 push；禁止 force-push / rebase。
 
+> ⚠️ **本仓库可能同时有多个 agent/人会话在改同一棵工作树**（2026-10-13 实测：
+> 另一条会话提交时把本会话未提交的 `api/tasks.py` 改动一起卷进了它的 commit）。
+> 因此：**暂存一律显式列路径**（`git add <具体文件>`），禁止 `git add -A` / `git add .` /
+> `git commit -a`；提交前先 `git status --short` 确认暂存区只有自己的文件。
+
 ## 安全红线（修复后现状）
 
 - 服务默认仅本机监听（`.env` HOST=127.0.0.1）；沙箱默认 Docker 硬隔离（无 Docker 回退 subprocess 仅限可信输入）

@@ -411,10 +411,46 @@ def _log_usage(task_id: str, node: str, response) -> None:
         pass  # 用量缺失不影响主流程
 
 
-def invoke_with_retry(llm, messages, task_id: str = "", node: str = "", retries: int = 2):
-    """LLM 调用统一重试（指数退避 1s/2s）：抗 API 抖动、429、超时等瞬时故障。
+# 瞬时链路错误的特征。这类错误重试有意义，且**流式路径更容易踩到**：
+# 分块传输被中间层/代理破坏时，会出现 `zstd decompressor error: Unknown frame descriptor`
+# 之类的解码失败（实测：网络抖动期间方案模式整个任务 error，而同一时刻非流式调用正常）。
+_TRANSIENT_ERROR_MARKERS = (
+    "zstd",
+    "zstandard",
+    "decodingerror",
+    "remoteprotocolerror",
+    "connectionerror",
+    "connecterror",
+    "connection reset",
+    "connection aborted",
+    "readtimeout",
+    "read error",
+    "incompleteread",
+    "incomplete read",
+    "peer closed",
+    "server disconnected",
+    "temporarily unavailable",
+    "timed out",
+    "timeout",
+    "429",
+    "502",
+    "503",
+    "504",
+)
 
-    确定性错误（如 API Key 无效）重试后仍会抛出，错误照常上浮。
+
+def _is_transient_error(exc: Exception) -> bool:
+    """判断是否为瞬时链路错误（网络抖动 / 响应解码失败 / 限流 / 网关错误）。"""
+    text = f"{type(exc).__name__}: {exc}".lower()
+    return any(marker in text for marker in _TRANSIENT_ERROR_MARKERS)
+
+
+def invoke_with_retry(llm, messages, task_id: str = "", node: str = "", retries: int = 2):
+    """LLM 调用统一重试：抗 API 抖动、429、超时等瞬时故障。
+
+    瞬时链路错误给更长的退避（1s/2s → 3s/6s）：网络抖动往往需要数秒才能恢复，
+    按原来的短间隔重试等于把重试额度一次性烧光。确定性错误（如 API Key 无效）
+    重试后仍会抛出，错误照常上浮。
     """
     import time as _time
 
@@ -426,12 +462,13 @@ def invoke_with_retry(llm, messages, task_id: str = "", node: str = "", retries:
             last_exc = e
             if attempt >= retries:
                 break
-            delay = 2**attempt  # 1s, 2s
+            delay = (3, 6, 12)[attempt] if _is_transient_error(e) else 2**attempt
             logger.warning(
-                "LLM 调用失败 [%s/%s] 第 %d 次，%.0fs 后重试: %s",
+                "LLM 调用失败 [%s/%s] 第 %d 次（瞬时=%s），%.0fs 后重试: %s",
                 task_id,
                 node or "llm",
                 attempt + 1,
+                _is_transient_error(e),
                 delay,
                 str(e)[:200],
             )
@@ -502,16 +539,44 @@ def invoke_streaming_with_retry(
             last_exc = e
             if attempt >= retries:
                 break
-            delay = 2**attempt  # 1s, 2s
+            delay = (3, 6, 12)[attempt] if _is_transient_error(e) else 2**attempt
             logger.warning(
-                "LLM 流式调用失败 [%s/%s] 第 %d 次，%.0fs 后重试: %s",
+                "LLM 流式调用失败 [%s/%s] 第 %d 次（瞬时=%s），%.0fs 后重试: %s",
                 task_id,
                 node or "llm",
                 attempt + 1,
+                _is_transient_error(e),
                 delay,
                 str(e)[:200],
             )
             _time.sleep(delay)
+
+    # 流式路径对链路质量更敏感（分块传输被中间层破坏 → zstd/解码失败）。重试耗尽且
+    # 属瞬时错误时，用一次**非流式**调用兜底：任务能完成比逐字动画重要，
+    # 拿到的完整内容仍会推给前端（前端收到一次 reset + 整段 delta）。
+    if last_exc is not None and _is_transient_error(last_exc):
+        try:
+            logger.warning(
+                "流式路径不可用，降级为非流式调用 [%s/%s]: %s",
+                task_id,
+                node or "llm",
+                str(last_exc)[:160],
+            )
+            _pub_event(task_id, "node_delta", node, {"reset": True})
+            resp = llm.invoke(messages)
+            text = getattr(resp, "content", "") or ""
+            if isinstance(text, list):
+                text = "".join(
+                    p.get("text", "") if isinstance(p, dict) else str(p) for p in text
+                )
+            if text:
+                _pub_event(task_id, "node_delta", node, {"delta": str(text)})
+                return str(text), dict(getattr(resp, "usage_metadata", None) or {})
+        except Exception as fallback_exc:  # noqa: BLE001
+            logger.warning(
+                "非流式兜底同样失败 [%s/%s]: %s", task_id, node or "llm", str(fallback_exc)[:160]
+            )
+
     raise last_exc  # type: ignore[misc]
 
 

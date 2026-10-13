@@ -153,8 +153,10 @@ def _find_tessdata() -> str | None:
 def _clean_env() -> dict:
     """构建清洗后的子进程环境变量，仅保留 Python 运行必需项。
 
-    注意：刻意排除 PYTHONPATH —— 项目是 editable 安装，若继承 PYTHONPATH，
-    沙箱代码可 `import app.config` 直接读取后端密钥（API Key/JWT secret）。
+    注意：排除 PYTHONPATH 只是减少泄露面，**不能**阻止沙箱代码 import 后端源码——
+    项目是 editable 安装，`math_model_agent.pth`（内容 = <repo>/backend）由 site
+    模块在解释器启动时无条件写进 sys.path，与 PYTHONPATH 无关。
+    真正的处置在 `_wrap_code`：剔除 sys.path 中的仓库根 + meta_path 屏蔽 app 包。
     """
     safe_keys = {
         "PATH",
@@ -677,14 +679,21 @@ class SandboxExecutor:
             }
 
     def _wrap_code(self, code: str, output_dir: str) -> str:
-        """包装用户代码：阻断网络 + 按需导入 + 自动捕获 matplotlib 输出。
+        """包装用户代码：阻断网络 + 剥离后端源码路径 + 按需导入 + 自动捕获 matplotlib 输出。
 
         不再预导入 numpy/scipy/pandas —— LLM 生成的代码自带 import，预导入浪费
         200-500MB 内存每个沙箱进程。matplotlib 也改为按需配置（meta_path hook：
         用户代码第一次 import matplotlib 时才设 Agg + 中文字体 + savefig 跟踪），
         纯计算代码不再为画图能力白付约 1s 启动开销。
         """
+        # 仓库根（app 包的上级目录）：editable 安装会把它写进 sys.path，
+        # 必须在沙箱内剔除，否则用户代码可 import app.config 直读 .env 密钥
+        from app.config import get_settings
+
+        project_root = str(get_settings().project_root.parent)
         return f"""
+_SANDBOX_PROJECT_ROOT = {json.dumps(project_root)}
+
 # ── 网络阻断：禁止任何 socket 连接（connect + connect_ex 双拦）──
 import socket as _socket
 _original_connect = _socket.socket.connect
@@ -699,6 +708,39 @@ del _socket, _original_connect, _original_connect_ex
 
 import sys as _sys
 import os as _os
+from importlib.abc import MetaPathFinder as _MetaPathFinder
+
+# ── 后端源码隔离（防密钥泄露；审计 2026-10 P0 已实证复现）──
+# editable 安装的 math_model_agent.pth 内容就是「<repo>/backend」，由 site 模块在
+# 解释器启动时无条件写进 sys.path——只从 env 里删 PYTHONPATH 挡不住它
+# （_clean_env 的旧假设因此失效：沙箱代码 `import app.config` 曾直接成功，
+# 并读到 .env 的 JWT_SECRET / 各服务商 API Key）。
+# 双重处置：
+#   ① 把仓库根与 backend/ 从 sys.path 剔除（常规 import 路径失效）
+#   ② 注册 meta_path finder 永久屏蔽 app / math_model_agent 顶层包——
+#      即便路径被重新加回也 import 不到，堵死 sys.path 注入式绕过
+_SANDBOX_BLOCKED_TOPLEVEL = frozenset({{"app", "math_model_agent"}})
+_SANDBOX_PROJECT_ROOTS = frozenset(
+    _os.path.realpath(_p)
+    for _p in (_SANDBOX_PROJECT_ROOT, _os.path.join(_SANDBOX_PROJECT_ROOT, "backend"))
+)
+_sys.path[:] = [
+    _p for _p in _sys.path
+    if _os.path.realpath(_p or _os.getcwd()) not in _SANDBOX_PROJECT_ROOTS
+]
+
+
+class _BlockBackendSource(_MetaPathFinder):
+    # 屏蔽后端源码包：meta_path 最前端，find_spec 直接抛错
+
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split(".")[0] in _SANDBOX_BLOCKED_TOPLEVEL:
+            raise ImportError(f"沙箱禁止导入后端源码包: {{fullname}}")
+        return None
+
+
+_sys.meta_path.insert(0, _BlockBackendSource())
+# 注意：不 del _MetaPathFinder —— 下方 _DeferMatplotlib 还要用它作基类
 
 # ── matplotlib 按需配置（deferred）──
 # 旧实现预热 import matplotlib + 扫系统字体，每次沙箱执行固定多付约 1s，
@@ -706,7 +748,6 @@ import os as _os
 # 的回归测试会在用户代码 print 之前就把进程杀掉，partial stdout 丢失
 # （test_subprocess_timeout_returns_partial_stdout 的 flaky 根因）。
 # 改为：用户代码第一次 import matplotlib 时才配 Agg + 中文字体 + savefig 跟踪。
-from importlib.abc import MetaPathFinder as _MetaPathFinder
 
 _saved_figs = set()
 _mpl_ready = False

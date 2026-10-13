@@ -245,14 +245,115 @@ def _next_step(state: AgentState) -> int:
 
 
 def _collect_image_urls(text: str) -> list[str]:
-    """从工具输出文本中提取 /api/images/... 形式的图表 URL（png/jpg/gif/webp）。"""
-    return re.findall(r"/api/images/[^\s,，)）'\"]+\.(?:png|jpg|jpeg|gif|webp)", text or "")
+    """从工具输出文本中提取 /api/images/... 形式的图表 URL（png/jpg/gif/webp）。
+
+    去重保序：同一段文本里同一张图常出现两次（沙箱 stdout 打印一次、
+    「生成图表:」清单再一次），实测事件流 tool_result.images 出现过
+    `[q2_route.png, q2_route.png]`；不去重前端就会渲染两张一样的图。
+    """
+    return list(
+        dict.fromkeys(
+            re.findall(r"/api/images/[^\s,，)）'\"]+\.(?:png|jpg|jpeg|gif|webp)", text or "")
+        )
+    )
 
 
 def _collect_file_urls(text: str, suffix: str) -> list[str]:
-    """从工具输出文本中提取指定后缀的文件 URL。"""
+    """从工具输出文本中提取指定后缀的文件 URL（去重保序，理由同上）。"""
     pattern = rf"/api/task_files/[^\s,，)）'\"]+\.{suffix}"
-    return re.findall(pattern, text or "")
+    return list(dict.fromkeys(re.findall(pattern, text or "")))
+
+
+def resolve_task_media_path(url: str) -> Path | None:
+    """把 `/api/task_files/...` 或 `/api/images/...` URL 解析为本地文件路径。
+
+    文件不存在 / URL 形态不认识一律返回 None。导出（DOCX 插图）与
+    「论文引用了不存在的图」校验共用本实现——只有一份真源，
+    否则导出与校验会各说各话（导出插得上、校验说没有）。
+
+    `/api/images/{run_id}/{name}` 是沙箱临时目录链接，先查 temp，
+    再回退持久副本 `data/chat_images/{run_id}/`（temp 会被系统清理）。
+    """
+    settings = get_settings()
+    parts = (url or "").rstrip("/").split("/")
+    try:
+        if "task_files" in parts:
+            # /api/task_files/{task_id}/{filename}
+            task_id = parts[parts.index("task_files") + 1]
+            filename = parts[-1]
+            p = settings.project_root / "data" / "task_files" / task_id / filename
+            return p if p.exists() else None
+        if "images" in parts:
+            run_id = parts[parts.index("images") + 1]
+            filename = parts[-1]
+            for p in (
+                Path(tempfile.gettempdir()) / "mathmodel_outputs" / run_id / filename,
+                settings.project_root / "data" / "chat_images" / run_id / filename,
+            ):
+                if p.exists():
+                    return p
+    except (ValueError, IndexError):
+        return None
+    return None
+
+
+# 独立成行的图片引用（与 md_docx 的插图判定同一形态）
+_MD_IMAGE_LINE_RE = re.compile(r"^!\[[^\]]*\]\((/api/(?:task_files|images)/[^)\s]+)\)$")
+# 图注行：`图 4.1：…` / `Figure 3 …`
+_FIGURE_CAPTION_RE = re.compile(r"^\s*(?:图|figure)\s*\d", re.IGNORECASE)
+
+
+def strip_missing_image_refs(markdown: str) -> tuple[str, list[str]]:
+    """删掉指向**不存在文件**的图片引用行，返回 (清理后的 markdown, 被删的 URL)。
+
+    为什么必须做：写作节点会臆造图片链接（实测任务 12df70f4：论文引用了
+    `/api/task_files/12df70f4/q4_pareto--8f3a1c.png`，而该文件在求解/验证
+    材料与文件区里都不存在）。后果有两处，都发生在**交付物**上：
+      · 网页阅读器里是一张破图；
+      · DOCX 导出时解析不到本地文件 → 这一行原样落成正文文字
+        （`![图3](/api/task_files/...)`），评委翻开就是一行源码。
+
+    处理：整行删除；紧跟其后的图注（`图 X：…`）一并删除，避免出现
+    「有图注没图」的悬空描述。返回被删 URL 供调用方打日志/告警。
+    """
+    if not markdown:
+        return markdown, []
+    lines = markdown.split("\n")
+    kept: list[str] = []
+    dropped: list[str] = []
+    i = 0
+    while i < len(lines):
+        m = _MD_IMAGE_LINE_RE.match(lines[i].strip())
+        if m and resolve_task_media_path(m.group(1)) is None:
+            dropped.append(m.group(1))
+            i += 1
+            # 跳过紧随其后的空行与图注行
+            while i < len(lines) and not lines[i].strip():
+                i += 1
+            if i < len(lines) and _FIGURE_CAPTION_RE.match(lines[i]):
+                i += 1
+            continue
+        kept.append(lines[i])
+        i += 1
+    if dropped:
+        logger.warning("论文引用了不存在的图片，已移除引用：%s", dropped)
+        return "\n".join(kept), dropped
+    return markdown, []
+
+
+def count_paper_structure(markdown: str) -> tuple[int, int]:
+    """统计论文正文结构：返回 (章节数, 图片引用数)。
+
+    用于 node_end 事件给前端报「几章 / 几张图」——比「输出 4 万字」
+    对读者有意义（字数在气泡里是噪音，已在前端文案层禁止）。
+    章节只数二级/三级标题（`## ` / `### `），一级标题是论文题目本身。
+    """
+    if not markdown:
+        return 0, 0
+    sections = len(re.findall(r"^#{2,3}\s+\S", markdown, flags=re.MULTILINE))
+    figures = len(re.findall(r"!\[[^\]]*\]\([^)]*\)", markdown))
+    return sections, figures
+
 
 
 def _persist_task_files(

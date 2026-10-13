@@ -6,6 +6,7 @@ Split from core/nodes.py: nodes.py keeps only orchestration nodes
 
 from __future__ import annotations
 
+import logging
 import re
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -21,7 +22,9 @@ from ..node_helpers import (
     _next_step,
     _pub_event,
     _save_working_memory,
+    count_paper_structure,
     invoke_with_retry,
+    strip_missing_image_refs,
 )
 from ..prompts.writing import (
     RED_TEAM_PROMPT,
@@ -33,6 +36,8 @@ from ..prompts.writing import (
     WRITING_TEACH_USER_TEMPLATE,
 )
 from ..skill_context import section_for_agent
+
+logger = logging.getLogger(__name__)
 
 # ── 论文章节规格（方案模式分章节写作）──────────────────────────────
 # 通用骨架 + 核心章「四、模型的建立与求解」按求解报告的子问题清单动态拆分。
@@ -329,6 +334,19 @@ def writing_agent_node(state: AgentState) -> dict:
 
     writing_output = paper
 
+    # 定稿前的一致性闸门：删掉指向不存在文件的图片引用。
+    # 写作模型会照抄材料里的链接形态、也会自己编（实测 12df70f4 编出了
+    # 一个哈希后缀齐全但磁盘上不存在的 q4_pareto 图），
+    # 破图会同时污染网页阅读器与 DOCX 交付物（见 strip_missing_image_refs）。
+    writing_output, dropped_refs = strip_missing_image_refs(writing_output)
+    if dropped_refs:
+        logger.warning(
+            "任务 %s 论文定稿移除了 %d 个不存在的图片引用", task_id, len(dropped_refs)
+        )
+
+    # 结构统计进 node_end：前端据此报「几章 / 几张图」而不是「输出 N 字」
+    sections, figures = count_paper_structure(writing_output)
+
     _pub_event(
         task_id,
         "node_end",
@@ -337,9 +355,12 @@ def writing_agent_node(state: AgentState) -> dict:
             "step": idx + 1,
             "output_length": len(writing_output),
             "red_team": "PASS" if "PASS" in critique.upper().split("\n")[0] else "REVISED",
+            "sections": sections,
+            "figures": figures,
+            "dropped_image_refs": dropped_refs,
             "summary": writing_output[:800],
             "title": "论文写作",
-            "desc": f"论文 {len(writing_output)} 字"
+            "desc": f"论文 {sections} 章 · 图表 {figures} 张"
             + (
                 " · 红队审校通过"
                 if "PASS" in critique.upper().split("\n")[0]

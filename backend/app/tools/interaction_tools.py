@@ -190,28 +190,40 @@ class RunCodeTool(BaseTool):
                     "注意：以上输出产生于失败/超时之前，不是完整结果，禁止直接当作最终数值。"
                 )
         if result["images"]:
-            img_urls = []
-            for img_path in result["images"]:
-                p = Path(img_path)
-                img_urls.append(f"/api/images/{result['run_id']}/{p.name}")
+            # 去重保序：同一个 run 里同一张图可能被 executor 重复上报
+            # （stdout 打印路径 + 文件列表收集各一次），实测事件流里
+            # images 出现过 [q2_route.png, q2_route.png]——前端按 URL 渲染会让
+            # 同一张图出现两遍（用户看到的"图表重复"）。源头去重，下游不必各自兜。
+            img_urls = list(
+                dict.fromkeys(
+                    f"/api/images/{result['run_id']}/{Path(img_path).name}"
+                    for img_path in result["images"]
+                )
+            )
             parts.append(f"生成图表: {', '.join(img_urls)}")
         if result.get("xlsx_files"):
-            xlsx_urls = []
-            for fpath in result["xlsx_files"]:
-                p = Path(fpath)
-                xlsx_urls.append(f"/api/task_files/{result['run_id']}/{p.name}")
+            xlsx_urls = list(
+                dict.fromkeys(
+                    f"/api/task_files/{result['run_id']}/{Path(fpath).name}"
+                    for fpath in result["xlsx_files"]
+                )
+            )
             parts.append(f"生成 Excel 文件: {', '.join(xlsx_urls)}")
         if result.get("csv_files"):
-            csv_urls = []
-            for fpath in result["csv_files"]:
-                p = Path(fpath)
-                csv_urls.append(f"/api/task_files/{result['run_id']}/{p.name}")
+            csv_urls = list(
+                dict.fromkeys(
+                    f"/api/task_files/{result['run_id']}/{Path(fpath).name}"
+                    for fpath in result["csv_files"]
+                )
+            )
             parts.append(f"生成 CSV 文件: {', '.join(csv_urls)}")
         if result.get("html_files"):
-            html_urls = []
-            for fpath in result["html_files"]:
-                p = Path(fpath)
-                html_urls.append(f"/api/task_files/{result['run_id']}/{p.name}")
+            html_urls = list(
+                dict.fromkeys(
+                    f"/api/task_files/{result['run_id']}/{Path(fpath).name}"
+                    for fpath in result["html_files"]
+                )
+            )
             parts.append(f"生成 HTML 报告: {', '.join(html_urls)}")
         if not parts:
             parts.append("代码执行完成，无输出。")

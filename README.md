@@ -18,8 +18,8 @@
 ### 1. 克隆
 
 ```bash
-git clone https://github.com/zhang66633/NB_project.git
-cd NB_project
+git clone https://github.com/zhang66633/Math_agent.git
+cd Math_agent
 ```
 
 ### 2. 一键安装
@@ -145,7 +145,7 @@ pnpm dev                       # http://localhost:5174（/api 代理到 127.0.0.
 - **文件上传**: CSV/Excel/TXT/PDF/DOCX 等上传后沙箱内直接读取（20MB、扩展名白名单）
 - **联网搜索**: DuckDuckGo 免费搜索，智能体可推荐 B站视频/GitHub仓库/教材资源
 - **澄清交互**: LLM 自主判断信息不足时弹出选项卡片，用户选择后继续
-- **知识库**: 47 张方法卡片 / 16 篇论文拆解 / 27 道竞赛真题 / 3 套框架模板，多路召回（向量 + BM25 + 标签）→ RRF 融合 → MMR 重排 → 时间衰减
+- **知识库**: 86 张方法卡片 / 32 篇论文拆解 / 38 道竞赛真题 / 3 套框架模板（共 159 条目），多路召回（向量 + BM25 + 标签）→ RRF 融合 → MMR 重排 → 时间衰减
 - **交付物导出**: Markdown / Word / Excel / CSV / ZIP 打包下载；PDF 打印导出，图表内联
 - **选择题题库**: 183 题覆盖建模/编程/论文三角色，错题本 + AI 答疑
 - **用户认证**: GitHub OAuth（贡献者白名单）+ JWT（7天过期）+ 访客模式
@@ -155,7 +155,7 @@ pnpm dev                       # http://localhost:5174（/api 代理到 127.0.0.
 ## 📁 项目结构
 
 ```
-NB_project/
+Math_agent/
 ├── start.py                      # 统一入口：install / start / stop 三个子命令
 ├── start.bat                     # Windows 转发器（纯 ASCII，逻辑都在 start.py）
 ├── docker-compose.yml           # 统一编排：--profile dev 全栈 / 默认仅后端（云端）
@@ -177,9 +177,9 @@ NB_project/
 │   │   ├── learning/            # 学习系统：61 单元内容 + 路径生成 + 技能树 + 掌握度追踪 + 题库
 │   │   └── services/            # Redis PubSub（fakeredis 回退）+ 会话/成就/记忆等服务
 │   ├── knowledge_base/          # 知识数据（YAML 真源，入库 git）
-│   │   ├── methods/             # 方法卡片（47 张）
-│   │   ├── papers/              # 优秀论文拆解（16 篇）
-│   │   ├── problems/            # 竞赛真题（27 道，含附件信息）
+│   │   ├── methods/             # 方法卡片（86 张）
+│   │   ├── papers/              # 优秀论文拆解（32 篇）
+│   │   ├── problems/            # 竞赛真题（38 道，含附件信息）
 │   │   └── templates/           # 解题框架模板（3 套）
 │   ├── data/                    # 运行时数据（gitignore：SQLite/JSON/ChromaDB/上传文件）
 │   ├── scripts/                 # 工具脚本（真题导入/预计算/端到端测试等）

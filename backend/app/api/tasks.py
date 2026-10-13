@@ -34,6 +34,10 @@ def _owned_task_or_404(task_id: str, owner: str) -> dict:
     return task
 
 
+# 任务终态：处于这些状态时取消没有意义（回 409 而不是假装成功）
+_TERMINAL_TASK_STATUSES = frozenset({"completed", "error", "cancelled"})
+
+
 # ── 附件内容提取（方案模式把上传的题目/数据文件读进问题上下文）────────
 
 # 单个文件提取内容的上限（字符），避免超大文件撑爆上下文
@@ -275,8 +279,16 @@ async def cancel_task(task_id: str, user: GitHubUser | None = Depends(get_curren
     # （曾与编排器线程争锁一起把事件循环堵死，所有请求 60s 无响应）
     # owner 校验前移，避免未授权方探知 task_id 是否存在（审计 2026-10 P0-1）
     uid = resolve_user_id(user)
-    if not get_session_manager().get_owned(task_id, uid):
+    task = get_session_manager().get_owned(task_id, uid)
+    if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
+    # 终态任务再取消没有意义：此前恒返 200「任务已取消」，前端会把一个已完成的
+    # 任务显示成「已取消」，状态是骗人的。改 409，让调用方能区分（审计 2026-10 P3）。
+    if task.get("status") in _TERMINAL_TASK_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"任务已处于终态（{task.get('status')}），无需取消",
+        )
     success = await asyncio.to_thread(get_session_manager().cancel, task_id, uid)
     if not success:
         raise HTTPException(status_code=404, detail="任务不存在")

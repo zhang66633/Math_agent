@@ -1,0 +1,195 @@
+# 方案模式 / 训练场 交互审计（2026-10-13）
+
+> 触发：用户四件事 —— ①学习中心错题页横向拉太长、操作要拖到最右才看得见；
+> ②方案模式图片"出现两次"；③思维链/前台直接输出"输出了多少字"很难看；
+> ④"还有右侧文件等，总之全面审计一下方案模式，严谨一点"。
+>
+> 本文档记录：现象 → 根因（含代码位置）→ 修复 → 验证证据 → 未修的与为什么。
+
+---
+
+## 1. 方法与证据来源
+
+| 证据 | 位置 | 用途 |
+|------|------|------|
+| 真实任务事件流 | `backend/data/task_events/222e0839.jsonl`、`12df70f4.jsonl` | 复现图片重复、`tool_result.images` 重复、node_end 文案 |
+| 任务落库结果 | `backend/data/sessions.json` 的 `final_response` | 证明论文引用了**不存在**的图（12df70f4） |
+| 任务文件区 | `backend/data/task_files/222e0839/`（mtime 排序） | 证明多轮产物同名不同 hash、导出取错文件 |
+| 无头浏览器截图 | Edge `--headless=new --screenshot`，真跑 `localhost:5174` | 目视验收训练场两栏与方案右栏 |
+| 单测 | `backend/tests/test_solution_artifacts.py`、`frontend/src/utils/solutionUx.test.ts`、`frontend/src/components/**/*.test.ts` | 把结论钉成回归护栏 |
+
+---
+
+## 2. 问题清单
+
+### P1-1 错题本/题库横向溢出，操作按钮被推到屏幕外
+
+- **现象**：右栏「刷题助手」展开后，错题本表格宽于可视区，要横向拖动才能点到「重做/移除」（用户截图为证）。
+- **根因**：`practice/index.vue` 的表格是 auto 布局，`题目` 列按内容的 **max-content** 撑宽
+  （题面含行内公式/矩阵块），`truncate` 只裁切、不改变表格的固有宽度；滚动容器因为
+  `overflow-y:auto` 在 CSS 规范下把另一轴也算成 auto，于是整块出现横向滚动条。
+- **修复**：
+  - 错题本由表格改为**卡片列表**：题目列 `min-w-0 flex-1` + 2–3 行截断，
+    操作列 `shrink-0` 常驻右侧 → 结构上不可能被挤出去；顺带补了 标签、错次、总数条。
+  - 题库/结算表格改 `table-fixed`，题目列吸收剩余宽度并在单元格内截断，
+    容器加 `overflow-x-hidden` 兜底；`类别` 列在窄屏 `hidden sm:table-cell`。
+  - 省略号必须画在真正装文字的 `<p>` 上（`[&>p]:truncate`）——只给父元素
+    `overflow:hidden` 只会裁切、不会出现 `…`（第一版实测就是这个样子）。
+
+### P1-2 「同一张图出现两次」——其实是三条重复来源
+
+```mermaid
+flowchart LR
+  subgraph BE["后端"]
+    A["代码执行 stdout 打印图片 URL"] --> M["tool_result.images"]
+    B["工具结果清单再列一次同 URL"] --> M
+    M -->|"未去重"| F1["前端工具卡片<br/>同图渲染 2 遍"]
+  end
+  subgraph FE["前端会话流"]
+    F1 --> S["ChatArea 底部交付物条<br/>（第 2 份缩略图）"]
+    F1 --> R["右栏交付物网格<br/>（第 2 份缩略图）"]
+    F1 -.-> P["论文正文 Markdown 引用<br/>（图的正式位置）"]
+  end
+```
+
+- **根因 1（后端）**：`_collect_image_urls` 用 `re.findall` 全文抓 URL，
+  沙箱 stdout 与「生成图表: …」清单各出现一次 → `images` 变成
+  `[q2_route.png, q2_route.png]`（12df70f4 事件流实证）。
+  修复：`_collect_image_urls` / `_collect_file_urls` 改**去重保序**；
+  `interaction_tools.py` 拼文本时同样去重（源头与采集端双保险）。
+- **根因 2（前端）**：`RunCodeRenderer` 直接把数组交给 `<img v-for>`；`ChatArea` 的
+  交付物条又独立扫一遍工具消息。修复：抽 `utils/toolOutput.ts::collectImageUrls`
+  做**唯一**去重入口，两处共用。
+- **根因 3（体验）**：同一张图在「执行卡片常驻大图 + 正文再引用一次」中占两屏。
+  修复：方案模式下工具卡片图表**默认折叠**成一行 `展开图表（N 张）`（`foldImages`），
+  要看原图一点即开——即"第一次的图片折叠进推理过程"；同时关掉方案页底部与右栏重复的
+  交付物条（`showArtifacts=false`，右栏已有同批缩略图网格）。
+
+### P1-3 论文引用了不存在的图（破图 + DOCX 里变成一行内部路径）
+
+- **实证**：任务 `12df70f4` 的 `final_response` 含
+  `![图3](/api/task_files/12df70f4/q4_pareto--8f3a1c.png)`，而该文件
+  在 `solving_output` / `verification_output` / 文件区里**都不存在** ——
+  写作模型照抄了"文件名--内容hash.png"的命名规律凭空造了一个。
+- **后果**（两处都落在交付物上）：网页阅读器一张破图；DOCX 导出解析不到本地文件时，
+  这一行退化成正文文字（实测文本 `图3：图片: /api/task_files/…`），评委翻开就是内部路径。
+- **修复**（确定性闸门，不靠再问一次模型）：
+  - 新增 `node_helpers.resolve_task_media_path()` 作为**唯一**的 URL→本地路径解析，
+    `tasks.py::_resolve_image_path`（DOCX 插图）改为委托它，保证"校验"与"导出"同源。
+  - 新增 `strip_missing_image_refs()`：写作定稿前删掉指向不存在文件的图片行，
+    并**连带删掉紧随其后的图注**（避免"有图注没图"的悬空描述），返回被删 URL 打日志。
+  - `count_paper_structure()` 统计正文 `##/###` 章数与图片引用数，随 node_end 下发。
+- **验证**：`test_docx_export_has_no_raw_image_markdown_after_strip` 端到端跑
+  `markdown_to_docx`，断言清理前后 `/api/task_files/` 是否出现在 Word 段落里。
+
+### P1-4 前台直接把"输出了多少字"当结果汇报
+
+- **根因**：`stores/task.ts` 非流式节点兜底文案写死
+  `求解完成，输出 {n} 字…` / `输出 {n} 字`；`PaperCard` 又显示 `{n} 字`；
+  且终态节点 `format_response`（无 title）也会生成一条 `输出 N 字` 气泡——
+  实测 222e0839 同时出现两条"输出 40315 字"。
+- **修复**：
+  - 抽 `utils/taskSummary.ts::describeNodeEnd()`：**只报产物**——
+    论文 `7 章 · 6 张图表 · 红队修订完成`、求解 `6 张图表 · 2 个数据表`、
+    验证 `模型检验通过`、导出 `已导出 2 个结果文件`；**字符数一律不出现在文案里**
+    （`output_length` 只用于判断有没有内容）。
+  - `SILENT_NODES = {format_response}`：终态节点不再发重复气泡（正文由论文消息承载）。
+  - 后端写作节点补上报 `sections`/`figures`；`PaperCard` 改为显示 `N 章 / N 张图表`。
+  - 老任务缺这些字段时优雅退化（有红队结论就报红队结论），不编造字数。
+
+### P1-5 右栏交付物：混堆文件 + 导出取到上一轮的结果
+
+- **根因 A（分组）**：上传附件、xlsx/csv、html 报告、zip 结果包全塞进一个"数据文件"列表；
+  同一张图多轮重跑产生的两份文件（`fig3_sens_c--f52a553d` 与 `fig3_sens_c--152a14e6`）
+  平铺，用户分不清哪张进了论文。
+- **根因 B（导出取错文件）**：`_export_xlsx`/`_export_csv` 用 `sorted(glob)[0]` ——
+  持久化文件名是 `原名--内容hash.后缀`，**字典序与生成顺序无关**（222e0839 有两份结果表），
+  用户点「Excel」可能拿到上一轮中间结果。
+- **修复**：
+  - 抽 `components/solution/DeliverablesPanel.vue`：按 **图表 / 数据文件 / 报告与结果包 /
+    上传附件 / 文档导出** 五组展示；每张图标注 `正文`（论文真的引用了 URL）或
+    `过程`（中间轮次产物，降透明度）；显示文件大小与总数；加"重新拉取"按钮。
+  - `_latest_task_file()` 按 **mtime** 取最新一份，xlsx / csv / zip 三个导出统一走它。
+
+### P1-6 侧栏切方案会话时，任务视图不跟着换（跨会话串消息）
+
+- **根因**：`solution/index.vue` 只在 `onMounted` 读一次 `session.taskId`；
+  之后切会话只改了 `activeSolutionId`。于是 `displayMessages` 会把**新会话的消息**
+  和**上一个任务的进度气泡**拼在一起，右栏继续显示旧任务的图表/文件；
+  更隐蔽的是 `syncTaskMsgToSession` 用"当前活动会话"做写入目标，
+  任务 A 跑着时切到会话 B，A 的进度就写进了 B（污染持久化数据）。
+- **修复**：任务创建时锁定 `taskSessionId`，同步只写归属会话；
+  抽出 `applySessionTask(sess)`，`watch(activeSolutionId)` 时对齐
+  taskId / 文件区 / 时间线，切到无任务会话则 `taskStore.clearTaskView()`
+  （**不关 WS**：任务可能仍在跑，切回来要能接着看）。
+
+### P2 级（顺手修）
+
+| 问题 | 修复 |
+|------|------|
+| 方案页 `ChatArea` 的「清空 / 新建对话」两个按钮**没绑事件**（点了没反应），标题永远显示"新对话" | 传 `session-title`，接上 `clear`/`new-session` |
+| 事件回放推 `final_response_preview` 会**覆盖**本地已拉全的论文（拉全文失败就永久截断） | `final-` 消息禁止被更短内容覆盖 |
+| 论文还没生成时点「阅读全文」毫无反馈 | 明确 toast（生成中 / 本任务没有论文正文） |
+| 方案页底部交付物条与右栏重复 | `showArtifacts=false`（方案页），chat 页不受影响 |
+| 右栏空状态在任务完成后仍说"将显示在这里" | 完成后改说"本任务没有生成文件" |
+
+---
+
+## 3. 改动文件
+
+**前端**
+
+| 文件 | 改动 |
+|------|------|
+| `pages/practice/index.vue` | 错题本卡片化、表格 `table-fixed`、省略号落位、统计条换行 |
+| `pages/solution/index.vue` | 会话-任务对齐、工具栏契约、预览覆盖防护、交付物面板改组件、`fold-tool-images` |
+| `components/solution/DeliverablesPanel.vue` | 新增：交付物五分组 + 正文/过程标注 + 尺寸 + 刷新 |
+| `components/tool/renderers/RunCodeRenderer.vue` | 图表去重 + `foldImages` 折叠 |
+| `components/bubble/BubbleTool.vue`、`BubbleAgent.vue`、`Bubble.vue`、`ChatArea.vue` | `foldImages` / `showArtifacts` 透传；交付物条改用共享去重 |
+| `components/paper/PaperCard.vue` | `N 字` → `N 章 / N 张图表` |
+| `stores/task.ts` | node_end 文案改写、静默终态节点、`clearTaskView()` |
+| `utils/taskSummary.ts`、`utils/toolOutput.ts`、`utils/text.ts` | 新增纯函数（可单测）：文案 / 去重 / 纯文本预览 |
+
+**后端**
+
+| 文件 | 改动 |
+|------|------|
+| `core/node_helpers.py` | `resolve_task_media_path` + `strip_missing_image_refs` + `count_paper_structure`；URL 采集去重 |
+| `core/agents/writing.py` | 定稿前剥离缺失图片引用；node_end 下发 `sections`/`figures`/`dropped_image_refs`；desc 不再报"字数" |
+| `api/tasks.py` | `_resolve_image_path` 委托共享解析；`_latest_task_file` 供 xlsx/csv/zip 导出取最新 |
+| `tools/interaction_tools.py` | 工具结果文本里的图/表/报告 URL 去重保序 |
+
+---
+
+## 4. 验证记录
+
+- `pytest -q`：**255 passed**（含本次新增 8 条）；1 条
+  `test_apikeys_ssrf.py::test_public_https_accepted` 失败，**不是本次改动引入**：
+  本机 DNS 把 `api.deepseek.com` 解析成 `198.18.0.89`（代理 fake-IP），
+  而工作区里正由另一条会话添加的"DNS 解析级"SSRF 守卫
+  （`apikeys._is_disallowed_ip` / `getaddrinfo`，`git show HEAD:...` 确认 HEAD 上还没有）
+  按设计拒绝了该地址。属于并发改动 × 本机网络环境的交互，与训练场/方案模式无关。
+- `vitest run`：**47 passed**（新增 14 + 3 + 7 条）。
+- `vue-tsc --noEmit` 0 error；`biome check src` 0 error；`ruff check` 0 error。
+- 真机目视（无头 Edge 打真实 dev server，guest 账号真实数据）：
+  - 训练场题库页：所有列（含错次/错题本按钮）在右栏展开时依旧可见，题目列出现 `…`；
+  - 训练场错题本页：12 道错题卡片化，`重做/移除` 常驻右侧；
+  - 方案右栏（用 222e0839 真实文件清单渲染）：`交付物 8 个文件 / 图表 5 · 正文引用 2`，
+    正文与过程徽标、`8 KB`/`1.2 MB` 尺寸、分组标题全部正确。
+- 验证用的临时 mock/默认页签改动**已全部还原**（`git diff` 复查无 `TEMP-VERIFY` 残留）。
+
+---
+
+## 5. 未修 / 移交
+
+1. **`/api/task_files/{task_id}/{file}`、`/api/files/{file_id}` 读接口没有属主校验**：
+   实测匿名请求可直接取到他人任务目录下的 png（本次截图就是免登录加载的）。
+   属于"属主隔离"这条线的范围，本机同时有另一条会话在做 `test_guest_task_ownership`
+   级别的审计 —— 不在这里重复改，避免互相覆盖，特此登记。
+2. **多轮产物全部留在文件区**（过程图/旧结果表）：现在只做"正文/过程"标注与导出取最新，
+   没有自动清理。清理策略涉及"用户可能想回看中间结果"，需要单独决策。
+3. **`ruff format` 漂移**：`node_helpers.py` 等 4 个文件在 HEAD 上就不符合 `ruff format`，
+   CI 只跑 `ruff check`（未强制 format），故本次不做全局格式化，避免把无关 diff 混进提交。
+4. **截断策略**：题目列表单行截断仍会切到行内公式（用户可能看到半个矩阵）；
+   已用 `title` 提供全文预览，若要更彻底需在列表里把 display math 降级为行内渲染，
+   属于渲染管线改动，留待需要时再做。

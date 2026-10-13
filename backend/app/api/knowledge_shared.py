@@ -51,6 +51,46 @@ class MethodCardDetail(BaseModel):
     unit_id: str = ""
 
 
+def normalize_entries(values, main_key: str, extra_keys: tuple[str, ...]) -> list[dict]:
+    """把加载器宽容的 ``str | dict`` 列表归一化成响应模型要的 ``list[dict]``。
+
+    背景（审计 2026-10-14 P0）：知识库 YAML 有两种历史格式——结构化对象
+    （``{name, latex, description}`` 等）与纯字符串（``"0-1背包: dp[i][w] = ..."``）。
+    加载器 ``knowledge/schemas.py`` 的 MethodCard 明确两种都收，而本模块的
+    ``MethodCardDetail`` 只收 dict。此前 ``get_method`` 直接
+    ``MethodCardDetail(**card.model_dump())``，字符串条目触发 pydantic
+    ValidationError → **22/86 张卡片的详情接口返回 500**，且前端编辑保存会
+    顺着这条失败路径把整张卡的公式/代码抹成空（PUT 用表单整体覆写 YAML 真源）。
+
+    归一化策略是**无损收纳**而非猜测式拆分：字符串整体进主字段（公式进
+    ``latex``、错误进 ``mistake``、代码进 ``code``），其余字段留空串；
+    结构化对象原样通过并补齐缺失字段，保证响应形状稳定。
+    """
+    keys = (main_key, *extra_keys)
+    out: list[dict] = []
+    for v in values or []:
+        if isinstance(v, dict):
+            out.append({k: ("" if v.get(k) is None else str(v.get(k) or "")) for k in keys})
+        else:
+            entry = dict.fromkeys(keys, "")
+            entry[main_key] = "" if v is None else str(v)
+            out.append(entry)
+    return out
+
+
+def method_card_detail(card) -> MethodCardDetail:
+    """从加载器的 MethodCard 构造 API 响应模型（含 str→dict 归一化）。"""
+    data = card.model_dump()
+    data["formulas"] = normalize_entries(data.get("formulas"), "latex", ("name", "description"))
+    data["common_mistakes"] = normalize_entries(
+        data.get("common_mistakes"), "mistake", ("solution",)
+    )
+    data["code_snippets"] = normalize_entries(
+        data.get("code_snippets"), "code", ("language", "description")
+    )
+    return MethodCardDetail(**data)
+
+
 class PaperSummary(BaseModel):
     id: str
     year: int

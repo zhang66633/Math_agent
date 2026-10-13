@@ -35,6 +35,7 @@ from .knowledge_shared import (  # noqa: F401
     _get_loader,
     _get_retriever,
     _next_id,
+    method_card_detail,
 )
 
 knowledge_router = APIRouter()
@@ -135,7 +136,9 @@ async def get_method(card_id: str):
     card = loader.get_method_by_id(card_id)
     if not card:
         raise HTTPException(status_code=404, detail=f"方法卡片 {card_id} 不存在")
-    return MethodCardDetail(**card.model_dump())
+    # 必须走归一化：YAML 里 formulas/common_mistakes/code_snippets 允许纯字符串，
+    # 直接 **model_dump() 会因响应模型只收 dict 而 500（审计 2026-10-14 P0）。
+    return method_card_detail(card)
 
 
 # ── papers ──────────────────────────────────────────────────────────────

@@ -539,6 +539,16 @@ class SandboxExecutor:
         """
         # 将代码写入临时文件，挂载进容器
         code_file = output_subdir / "_code.py"
+        # --cap-drop=ALL 会连 CAP_DAC_OVERRIDE 一起丢掉，容器内的 root 不再能
+        # 绕过文件权限位。而 output_subdir 由宿主进程创建（GitHub runner 上是
+        # uid 1001 / mode 755），容器内进程对它只是 "other" → 只读，
+        # 于是用户代码只要 savefig('相对路径') 就 PermissionError
+        # （2026-10 CI 实测，沙箱测试抓出来的真实缺陷）。
+        # 沙箱输出目录是一次性临时目录，放开写权限不削弱隔离。
+        try:
+            output_subdir.chmod(0o777)
+        except Exception:
+            logger.debug("chmod output_subdir 失败（Windows 上部分位无效）", exc_info=True)
         code_file.write_text(code, encoding="utf-8")
 
         # 容器内输出目录

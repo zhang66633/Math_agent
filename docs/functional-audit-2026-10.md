@@ -192,11 +192,13 @@ head -20 backend/data/sessions/<task_id>/problem_doc.md   # 仍是「（待完�
 
 ---
 
-## 八、未覆盖项（需拍板）
+## 八、未覆盖项
 
 1. ~~**真实 LLM 端到端任务**~~ → **已覆盖**，见第九节。
-2. `POST /api/knowledge/reindex`（重建向量索引数分钟，演示期有风险）与
-   `/api/knowledge/import/confirm`（写 YAML 真源）依旧未测，理由同上一轮报告。
+2. `POST /api/knowledge/reindex`（重建向量索引数分钟，演示期有风险）依旧未测，
+   理由同上一轮报告。
+3. ~~`/api/knowledge/import/confirm`~~ → **已不存在**：该端点属无调用方的旧同步
+   导入流程，已在清理轮整体删除（见第十一节）。
 
 ---
 

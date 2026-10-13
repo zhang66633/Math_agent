@@ -146,8 +146,10 @@ async def create_task(
 ):
     """创建建模任务，后台启动编排器。"""
     # 检查是否有可用的 API Key（读 apikeys.json 文件 IO，不占主循环）
-    uid = _resolve_user_id(user=user)
-    active_key = await asyncio.to_thread(get_active_api_key, uid)
+    # key_uid 走 apikeys 命名空间：访客桶是 "guest"（存量 apikeys.json 的钥匙都挂在那），
+    # 与任务/会话/学习数据命名空间的访客桶 "default" 不是同一个字面量——别混用。
+    key_uid = _resolve_user_id(user=user)
+    active_key = await asyncio.to_thread(get_active_api_key, key_uid)
     if not active_key:
         raise HTTPException(
             status_code=400,
@@ -161,8 +163,13 @@ async def create_task(
     full_problem = await asyncio.to_thread(
         _build_problem_with_attachments, req.problem, req.files
     )
-    # owner 落库：没有它，后续所有读/取消都无法按用户隔离（审计 P0-1）
-    task = session_mgr.create(problem=full_problem, mode=req.mode, owner=uid)
+    # owner 落库：没有它，后续所有读/取消都无法按用户隔离（审计 P0-1）。
+    # 必须用任务命名空间的 resolve_user_id（访客 → "default"，与 session.py 的
+    # DEFAULT_TASK_OWNER 及所有读取方一致）。曾错用 apikeys 的 _resolve_user_id
+    # （访客 → "guest"），导致每个匿名任务一经创建就 404——访客是本站默认形态
+    # （登录限项目贡献者），等于整个方案模式对真实用户不可用。
+    owner = resolve_user_id(user)
+    task = session_mgr.create(problem=full_problem, mode=req.mode, owner=owner)
     task_id = task["task_id"]
 
     # 文件区：记录用户上传的附件（供前端文件区展示与下载）
@@ -185,7 +192,7 @@ async def create_task(
     # 在独立线程中运行编排器（节点含同步阻塞调用 llm.invoke / subprocess），
     # 以免阻塞事件循环导致 HTTP 响应体无法刷新、WS 进度卡住
     asyncio.create_task(
-        asyncio.to_thread(_run_orchestrator_sync, task_id, full_problem, req.mode, uid)
+        asyncio.to_thread(_run_orchestrator_sync, task_id, full_problem, req.mode, key_uid)
     )
 
     return TaskResponse(**task)
@@ -598,32 +605,15 @@ def _export_latex(full_text: str, writing_output: str) -> Response:
 
 
 def _resolve_image_path(url: str) -> Path | None:
-    """把 /api/task_files/... 或 /api/images/... URL 解析为本地文件路径。"""
-    import tempfile as _tempfile
+    """把 /api/task_files/... 或 /api/images/... URL 解析为本地文件路径。
 
-    parts = url.rstrip("/").split("/")
-    settings = get_settings()
-    try:
-        if "task_files" in parts:
-            # /api/task_files/{task_id}/{filename}
-            task_id = parts[parts.index("task_files") + 1]
-            filename = parts[-1]
-            p = settings.project_root / "data" / "task_files" / task_id / filename
-            if p.exists():
-                return p
-        elif "images" in parts:
-            # /api/images/{run_id}/{filename} → temp 目录 + 持久副本兜底
-            run_id = parts[parts.index("images") + 1]
-            filename = parts[-1]
-            for p in (
-                Path(_tempfile.gettempdir()) / "mathmodel_outputs" / run_id / filename,
-                settings.project_root / "data" / "chat_images" / run_id / filename,
-            ):
-                if p.exists():
-                    return p
-    except Exception:
-        return None
-    return None
+    真源在 `app.core.node_helpers.resolve_task_media_path`：写作定稿时的
+    「图片引用是否真实存在」校验与这里的 DOCX 插图必须共用同一套解析，
+    否则会出现「校验说图在、导出插不上」这类静默不一致。
+    """
+    from app.core.node_helpers import resolve_task_media_path
+
+    return resolve_task_media_path(url)
 
 
 def _export_docx(content: str, title: str = "数学建模方案") -> StreamingResponse:
@@ -670,19 +660,33 @@ def _export_docx(content: str, title: str = "数学建模方案") -> StreamingRe
     )
 
 
+def _latest_task_file(task_dir: Path, pattern: str) -> Path | None:
+    """任务文件区里最新的匹配文件（按 mtime，同 mtime 退化为文件名倒序）。
+
+    为什么不能 `sorted(glob(...))[0]`：持久化文件名是「原名--内容hash.后缀」
+    （见 node_helpers._persist_task_files），字典序与生成顺序无关。
+    实测任务 222e0839 产出过两份结果表（`results--634f20b5.xlsx` 与
+    `results--0d33e0a5.xlsx`），按字典序固定取到其中一份——用户点
+    「Excel (.xlsx)」可能拿到上一轮的中间结果。按 mtime 取最新才对应
+    论文引用的那一轮产物。
+    """
+    files = [p for p in task_dir.glob(pattern) if p.is_file()]
+    if not files:
+        return None
+    return max(files, key=lambda p: (p.stat().st_mtime, p.name))
+
+
 def _export_xlsx(task_id: str) -> Response:
-    """导出任务生成的 xlsx 结果文件。"""
+    """导出任务生成的 xlsx 结果文件（多轮时取最新一轮）。"""
     from pathlib import Path as _Path
 
     settings = get_settings()
     task_dir = _Path(settings.project_root) / "data" / "task_files" / task_id
 
-    # 优先找 LLM 生成的 results.xlsx
-    xlsx_files = sorted(task_dir.glob("*.xlsx"))
-    if not xlsx_files:
+    xlsx_path = _latest_task_file(task_dir, "*.xlsx")
+    if xlsx_path is None:
         raise HTTPException(status_code=404, detail="未找到 xlsx 结果文件")
 
-    xlsx_path = xlsx_files[0]
     return FileResponse(
         str(xlsx_path),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -691,17 +695,16 @@ def _export_xlsx(task_id: str) -> Response:
 
 
 def _export_csv(task_id: str) -> Response:
-    """导出任务生成的 CSV 数据文件。"""
+    """导出任务生成的 CSV 数据文件（多轮时取最新一轮）。"""
     from pathlib import Path as _Path
 
     settings = get_settings()
     task_dir = _Path(settings.project_root) / "data" / "task_files" / task_id
 
-    csv_files = sorted(task_dir.glob("*.csv"))
-    if not csv_files:
+    csv_path = _latest_task_file(task_dir, "*.csv")
+    if csv_path is None:
         raise HTTPException(status_code=404, detail="未找到 CSV 数据文件")
 
-    csv_path = csv_files[0]
     return FileResponse(
         str(csv_path),
         media_type="text/csv; charset=utf-8",
@@ -724,11 +727,11 @@ async def download_package(
     settings = get_settings()
     task_dir = _Path(settings.project_root) / "data" / "task_files" / task_id
 
-    # 尝试找已有 zip
-    zip_files = sorted(task_dir.glob("*.zip"))
-    if zip_files:
+    # 尝试找已有 zip（多轮任务可能留下多个，取最新一份）
+    zip_path = _latest_task_file(task_dir, "*.zip")
+    if zip_path is not None:
         return FileResponse(
-            str(zip_files[0]),
+            str(zip_path),
             media_type="application/zip",
             filename=f"{task_id}_results.zip",
         )

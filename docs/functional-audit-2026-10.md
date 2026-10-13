@@ -6,15 +6,18 @@
 
 ## 一、结论先行
 
-| 级别 | 数量 | 内容 |
-|------|------|------|
-| **P0 功能缺陷** | 1 | **86 张方法卡中 22 张（25.6%）详情接口必返 500**，并存在「编辑→保存」**抹掉公式/代码字段**的数据毁灭路径 |
-| **P1 死功能** | 1 | Working Memory「问题状态文档」永不更新——生产数据实证所有真实任务的 `problem_doc.md` 都是初始模板 |
-| **P2** | 3 | 6 个孤儿端点无任何调用方；测试残渣落进运行数据目录；`pytest.ini` 的 `-q` 吞掉汇总行 |
-| **P3** | 2 | 前端声明了 API 从不返回的类型字段；对已完成任务 cancel 返回 200 |
+| 级别 | 数量 | 内容 | 状态 |
+|------|------|------|------|
+| **P0 功能缺陷** | 1 | **86 张方法卡中 22 张（25.6%）详情接口必返 500**，并存在「编辑→保存」**抹掉公式/代码字段**的数据毁灭路径 | ✅ **已修复**（`88d037d`，86/86 复测 200） |
+| **P0 回归** | 1 | 访客任务属主桶漂移（`"guest"` vs `"default"`）→ 匿名任务建完即 404，方案模式对默认用户形态全不可用 | ✅ **已修复**（见 9.1，含 3 例回归测试） |
+| **P1 死功能** | 1 | Working Memory「问题状态文档」永不更新——生产数据实证所有真实任务的 `problem_doc.md` 都是初始模板 | ⚠️ 未修（见第四节） |
+| **P1 进行中缺陷** | 1 | 新增 Key 的 DNS SSRF 校验在本机误杀全部真实服务商（fake-ip `198.18.x.x` 被判内网），`test_apikeys_ssrf` 1 例失败 | ⚠️ 你的在改项，见第十节 |
+| **P2** | 3 | 6 个孤儿端点无任何调用方；测试残渣落进运行数据目录；`pytest.ini` 的 `-q` 吞掉汇总行 | ⚠️ 未修 |
+| **P3** | 2 | 前端声明了 API 从不返回的类型字段；对已完成任务 cancel 返回 200 | ⚠️ 未修 |
 
-**测试面全绿**：后端 209 passed、ruff 0 error、前端 typecheck / biome / vitest(23) / build 全过；
-LangGraph 九节点全链路用桩 LLM 实测跑通；SSE 对话与 WebSocket 属主校验均端到端验证通过。
+**测试面全绿**：后端 **221 passed**（含本轮新增 7 个全量枚举用例）、ruff 0 error、前端 typecheck / biome / vitest(23) / build 全过；
+LangGraph 九节点全链路用桩 LLM 实测跑通；SSE 对话与 WebSocket 属主校验均端到端验证通过；
+**真实 LLM 端到端任务已跑通**（见第九节）。
 
 ---
 
@@ -22,7 +25,7 @@ LangGraph 九节点全链路用桩 LLM 实测跑通；SSE 对话与 WebSocket �
 
 | 项目 | 命令 | 结果 |
 |------|------|------|
-| 后端测试 | `python -m pytest` | ✅ **209 passed**（198 + 用户新增 11 个隔离测试，28.6s） |
+| 后端测试 | `python -m pytest` | ✅ **221 passed**（198 + 用户新增 11 个隔离测试 + 本轮新增 7 个详情契约测试，40.2s） |
 | 后端 lint | `ruff check app tests` | ✅ All checks passed |
 | 前端类型 | `vue-tsc --noEmit` | ✅ 0 error |
 | 前端 lint | `biome check src` | ✅ 197 files, no issues |
@@ -77,6 +80,31 @@ GET /api/knowledge/methods/mc_001  → 200   （未受影响的 64 张正常）
 2. **数据规范化（可选跟进）**：写一次性脚本把 22 张卡的 YAML 统一为结构化形式，消除双格式长期并存。
 3. **加回归测试**：遍历 `load_all_methods()` 对每张卡构造一次 `MethodCardDetail`，确保 86/86 全部可序列化
    （这类「全量枚举」测试正是上一轮漏掉的那种）。
+
+### ✅ 修复实施记录（`88d037d`）
+
+**做法**：`knowledge_shared.py` 新增 `normalize_entries()` / `method_card_detail()`，策略是
+**无损收纳而非猜测式拆分**——字符串整体进主字段（公式进 `latex`、错误进 `mistake`、代码进 `code`），
+其余字段补空串；结构化对象原样通过并补齐缺失字段；`None` 归一为 `""`（这一条是回归测试自己抓出来的：
+初版把 `None` 变成了字符串 `"None"`）。`get_method` 改走 `method_card_detail()`，**API 契约不变**。
+
+**复测证据**（自起隔离实例，修复后）：
+
+```
+mc_002..mc_012（此前 8/8 全 500）→ 全部 200，字段计数正确
+全量枚举 86 张 → 86/86 = 200，零失败
+mc_007.formulas[0]        = {"latex": "0-1背包: dp[i][w] = max(...)", "name": "", "description": ""}
+mc_007.common_mistakes[0] = {"mistake": "问题没有重叠子问题时强行 DP...", "solution": ""}
+mc_007.code_snippets[0]   = {"code": "# Python: 0-1背包 ...", "language": "", "description": ""}
+论文 / 模板 / 真题详情 → 无回归
+```
+
+前端 `ArrayEditor` 的字段声明（`name/latex/description`、`mistake/solution`、`language/description/code`）
+与归一化后的形状**逐字对齐**，编辑框现在能直接显示与修改这些内容。
+
+**新增测试** `tests/test_kb_detail_contract.py`（7 例）：核心是**全量枚举**——86 张卡逐一构造响应模型
++ 逐一打 HTTP 断言 200；另含 None 条目、混合列表、字符串落主字段、未知 ID 仍 404 等用例。
+后端总计 **221 passed**、ruff 0 error。
 
 ---
 
@@ -147,8 +175,102 @@ head -20 backend/data/sessions/<task_id>/problem_doc.md   # 仍是「（待完�
 
 ## 八、未覆盖项（需拍板）
 
-1. **真实 LLM 端到端任务**（`POST /api/tasks` 跑完整国赛题，约 3 分钟、消耗真实额度、会往
-   `sessions.json` 写一条任务）。上一轮已实测过两次；本轮代码有改动（写作流水线 / 技能装配），
-   是否值得再跑一次由你定。
+1. ~~**真实 LLM 端到端任务**~~ → **已覆盖**，见第九节。
 2. `POST /api/knowledge/reindex`（重建向量索引数分钟，演示期有风险）与
    `/api/knowledge/import/confirm`（写 YAML 真源）依旧未测，理由同上一轮报告。
+
+---
+
+## 九、真实 LLM 端到端任务（修复后复跑）
+
+用户拍板「先修 P0 再跑一次端到端」。修复提交后，用一道轻量线性规划题走完整
+`POST /api/tasks` → LangGraph 九节点 → 终态验收全链路（真实 DeepSeek 调用、真实沙箱、
+真实事件落盘）。任务与各节点产物见下方实测记录。
+
+### 9.1 端到端本身抓出一个 P0 回归（安全修复引入，已修）
+
+第一次跑端到端时，流水线**实际跑完了**（日志显示 classify→…→verification 全过，
+磁盘上 `problem_doc`/检查点/311 行事件流俱全、`status=completed`），但 REST 侧
+`GET /api/tasks/{id}` 返回 **404**、列表里也找不到。排查后定位：
+
+- `create_task` 用 `apikeys._resolve_user_id`（访客桶 = `"guest"`，为兼容存量
+  `apikeys.json`）给**任务**定 owner；
+- 而所有读取方用 `auth.resolve_user_id`（访客桶 = `"default"`，与
+  `session.DEFAULT_TASK_OWNER` 一致）。
+- 两个字面量不一致 → **匿名任务一经创建就对自己 404**（列表缺席、WS 1008 关闭）。
+
+访客是本站**默认形态**（登录限项目贡献者 `ALLOWED_CONTRIBUTORS`），所以这个回归
+等于整个方案模式对真实用户不可用。TestClient 复现（修复前）：
+
+```
+POST /api/tasks            -> 200，新建 7019e9ec
+GET  /api/tasks/7019e9ec   -> 404        ← 建完即失联
+GET  /api/tasks            -> 200，列表不含新任务
+```
+
+**为什么测试没抓住**：`test_user_isolation.py` 只覆盖登录用户（`audit_owner_a/b`），
+访客路径——也就是默认路径——没有任何用例。
+
+**修复**：`create_task` 里把两件事拆开——查 Key 仍走 apikeys 桶（`key_uid`），
+任务属主改用任务命名空间的 `resolve_user_id(user)`。`chat_routes` 的用法本就正确
+（只用于查 Key），无需改动。
+
+**回归测试** `tests/test_guest_task_ownership.py`（3 例）：访客建的任务能立刻读到自己、
+出现在列表里、属主落在 `"default"`；访客 WS 能订阅自己的任务；登录用户看不到访客的任务。
+修复后同一复现脚本：`GET -> 200`、`列表含新任务: True`。
+
+### 9.2 端到端实测记录
+
+访客属主修复后，一道轻量线性规划题（工厂两种产品、两种原料约束）走完整链路：
+
+| 项 | 实测值 |
+|----|--------|
+| 任务 | `b4a4d714`（匿名/访客形态，无 token） |
+| 终态 | `completed`，总耗时 **240s** |
+| analysis_output | 2498 字 |
+| model_output | 2633 字 |
+| solving_output | 10573 字（含沙箱代码执行） |
+| verification_output | 3676 字 |
+| writing_output / final_response | **40727 字** |
+| 事件流 | 317 条：node_start/end 各 10、node_delta 242、tool_call/result 各 9、code_exec 18、plan 1、task_end 1 |
+| 断点续做 | 7 个阶段检查点齐全，`resume_stage=null`、`is_active=false` |
+| 论文标题 | 《基于线性规划的工厂日生产计划优化模型与灵敏度分析》 |
+
+**这条实测同时验证了 9.1 的修复**：任务以访客身份创建，轮询全程能 `GET /api/tasks/{id}`
+读到各节点产物——修复前同一流程在第一步就 404。
+
+内容质量小观察（非缺陷）：`solving_output` 的开头是英文过程性独白
+（"All verifications pass. Now I'll output the co…"），求解节点的原始产出没有过
+`_clean_md` 类的清洗就直接进了状态；终稿由写作节点重写，故不影响论文成品。
+
+---
+
+## 十、顺手发现的两条（非本轮主目标，记录在案）
+
+### 10.1 方法卡详情有数据但不渲染（P2，前端）
+
+`KnowledgeSearchPanel.vue` 的 `method_card` 分支只渲染 `principle` 与 `applicable_when`；
+API 已返回（修复后也能正常加载）的 `formulas` / `common_mistakes` / `code_snippets` /
+`typical_scenarios` / `related_cards` **没有展示位**。同为详情的 `paper` 分支却把这些
+字段渲染得很完整（核心公式 / 方法链路 / 算法概要 / 常见陷阱）。管理页的 ArrayEditor
+能编辑它们，但浏览页看不到——建议按 paper 分支的规格补齐。
+
+### 10.2 新增 Key 的 DNS 校验在本机误杀真实服务商（P1，你的在改项）
+
+为落实上一轮审计的 P1-1 建议（「补一步 DNS 解析后再判内网」），`_validate_custom_base_url`
+现在会 `getaddrinfo` 后逐一判定。但**本机 DNS 是 fake-ip 池**：
+
+```
+api.deepseek.com    -> 198.18.0.89
+api.siliconflow.cn  -> 198.18.0.103
+```
+
+`198.18.0.0/15` 被 `_is_disallowed_ip` 判为内网 → 任何真实服务商的 base_url 都被拒，
+`tests/test_apikeys_ssrf.py::test_public_https_accepted` 因此失败（这是当前全量测试里
+唯一的红）。调用点只有新增 Key 的两个端点（`create_api_key` / `quick_add_api_key`，
+apikeys.py:303/373），所以**已配置的 Key 不受影响、任务与对话照常跑**；受影响的是
+「在 /apikeys 页或首页添加新 Key」这条流程。
+
+三个方向（按推荐排序）：① 对 `PROVIDER_PRESETS` 里的已知域名做白名单，跳过 DNS 判定；
+② 把 `198.18.0.0/15` 从内网判定中排除（它是 benchmarking 保留段，常被代理软件的
+fake-ip 池使用，本机即是）；③ 用环境变量开关控制这层 DNS 校验，默认只在生产开。

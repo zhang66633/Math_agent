@@ -40,6 +40,7 @@ from ..prompts.solving import (
     SOLVING_TOOL_SYSTEM_PROMPT,
     SOLVING_TOOL_USER_TEMPLATE,
 )
+from ..skill_context import section_for_agent
 
 
 def solving_agent_node(state: AgentState) -> dict:
@@ -138,6 +139,10 @@ def solving_agent_node(state: AgentState) -> dict:
             "- 预计超过预算的计算必须拆分：先小规模/小迭代跑通验证正确性，"
             "再分步放大规模；严禁单次调用塞入全量重计算。"
         ),
+    )
+    # 技能装配：图表规范（求解节点负责出图，论文级绘图规范在这里生效）
+    system_prompt += section_for_agent(
+        state.get("problem_type"), "solving", state.get("active_skills")
     )
     # EDA 结论注入求解侧（审查 P1：preprocessed_data 曾是悬空字段，EDA 结论被丢弃）
     _eda = (state.get("preprocessed_data") or "").strip()

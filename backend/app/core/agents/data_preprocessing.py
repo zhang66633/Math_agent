@@ -33,6 +33,7 @@ from ..prompts.preprocessing import (
     PREPROCESSING_SYSTEM_PROMPT,
     PREPROCESSING_USER_TEMPLATE,
 )
+from ..skill_context import section_for_agent
 
 
 def data_preprocessing_agent_node(state: AgentState) -> dict:
@@ -92,7 +93,10 @@ def data_preprocessing_agent_node(state: AgentState) -> dict:
             )
         data_files_context = "\n".join(lines)
 
-    system_prompt = PREPROCESSING_SYSTEM_PROMPT
+    # 技能装配：图表规范等（绘图主要发生在数据探索的沙箱代码里）
+    system_prompt = PREPROCESSING_SYSTEM_PROMPT + section_for_agent(
+        state.get("problem_type"), "data_preprocessing", state.get("active_skills")
+    )
     user_prompt = PREPROCESSING_USER_TEMPLATE.format(
         problem=state["problem_raw"],
         model=model_text,

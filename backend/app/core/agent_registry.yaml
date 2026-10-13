@@ -43,7 +43,9 @@ agents:
     label: 数据预处理
     entry: app.core.agents.data_preprocessing:data_preprocessing_agent_node
     model_role: solving
-    skills: false
+    # 绘图主要发生在数据探索与求解的沙箱代码里，因此这两个节点也装配技能
+    # （chart-standards 通过 agents 字段只在它们身上生效）
+    skills: true
     uses_tools: true
     rollback: false
 
@@ -52,7 +54,7 @@ agents:
     label: 求解器
     entry: app.core.agents.solving:solving_agent_node
     model_role: solving
-    skills: false
+    skills: true
     uses_tools: true
     rollback: true
 

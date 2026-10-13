@@ -19,6 +19,7 @@ EXPECTED_BUILTINS = {
     "evaluation-modeling",
     "sensitivity-analysis",
     "paper-structure",
+    "chart-standards",
 }
 
 
@@ -51,7 +52,11 @@ def test_resolve_matches_agent_role() -> None:
         "sensitivity-analysis"
     }
     assert {s.name for s in resolve_skills("optimization", "writing")} == {"paper-structure"}
-    assert {s.name for s in resolve_skills("optimization", "solving")} == set()
+    # 求解与数据预处理节点负责出图，因此拿到图表规范（两者同一份技能）
+    assert {s.name for s in resolve_skills("optimization", "solving")} == {"chart-standards"}
+    assert {s.name for s in resolve_skills("optimization", "data_preprocessing")} == {
+        "chart-standards"
+    }
 
 
 def test_catalog_without_role_is_not_filtered_by_agents() -> None:

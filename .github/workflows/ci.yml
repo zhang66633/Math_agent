@@ -22,6 +22,12 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -e ".[dev,ocr,search]"
+      # 沙箱默认后端是 docker；runner 上 docker daemon 可用但镜像不存在，
+      # 不构建的话所有沙箱执行都会失败（2026-10 CI 实测 6 个失败全源于此）。
+      # 构建失败不阻塞后续步骤——executor 在镜像缺失时会自动回退 subprocess。
+      - name: Build sandbox image
+        working-directory: backend
+        run: docker build -t mathmodel-sandbox -f Dockerfile.sandbox . || echo "::warning::sandbox image build failed, tests will fall back to subprocess"
       - name: Lint (ruff)
         run: ruff check app tests
       - name: Run tests

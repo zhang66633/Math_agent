@@ -152,19 +152,23 @@ async def health_check():
 async def sandbox_status():
     """沙箱执行模式状态（供前端面板展示当前是 Docker 硬隔离还是 subprocess 回退）。"""
     from ..config import get_settings
-    from ..sandbox.executor import docker_daemon_up
+    from ..sandbox.executor import docker_daemon_up, docker_image_ready
 
     settings = get_settings()
     docker_up = docker_daemon_up()
-    backend = "docker" if (settings.sandbox_backend == "docker" and docker_up) else "subprocess"
+    # 镜像没构建同样走不了 docker——只探 daemon 会让面板显示"硬隔离中"而实际在跑
+    # subprocess（2026-10 CI 实测的口径错误）
+    image_ready = docker_up and docker_image_ready()
+    backend = "docker" if (settings.sandbox_backend == "docker" and image_ready) else "subprocess"
     return {
         "backend": backend,
         "configured": settings.sandbox_backend,
         "docker_available": docker_up,
+        "docker_image_ready": image_ready,
         "note": (
             "docker 硬隔离"
             if backend == "docker"
-            else "docker 不可用（未安装或未启动），已回退 subprocess 模式"
+            else "docker 不可用（未安装/未启动，或沙箱镜像未构建），已回退 subprocess 模式"
         ),
     }
 

@@ -62,6 +62,9 @@ SANDBOX_IMAGE = "mathmodel-sandbox"
 # Docker 守护进程探测缓存（避免每次执行都探测；失败后 60s 内不重试）
 _daemon_probe = {"ok": None, "ts": 0.0}
 
+# 沙箱镜像存在性探测缓存（镜像不在时每次 docker run 都要白等一次 pull 失败）
+_image_probe = {"ok": None, "ts": 0.0}
+
 
 def docker_daemon_up() -> bool:
     """探测 Docker 守护进程是否可用（结果缓存 60 秒）。
@@ -93,6 +96,46 @@ def docker_daemon_up() -> bool:
         logger.warning(
             "docker 守护进程不可用（未安装或 Docker Desktop 未启动），"
             "沙箱回退 subprocess 模式（仅限可信输入）"
+        )
+    return ok
+
+
+def docker_image_ready() -> bool:
+    """探测沙箱镜像是否已构建（结果缓存 60 秒）。
+
+    daemon 活着但镜像没 build 时，`docker run` 会先去 registry 拉取、
+    报一串 "pull access denied" 后以 125 退出——用户看到的是跟沙箱无关的
+    报错，且每次执行都白等一次联网超时（2026-10 CI 实测：runner 上 docker
+    可用但无镜像，6 个沙箱测试全挂在这）。
+    因此「能用 docker」= daemon 连通 **且** 镜像在本地存在。
+    """
+    import time as _time
+
+    now = _time.monotonic()
+    if _image_probe["ok"] is not None and (now - _image_probe["ts"]) < 60:
+        return _image_probe["ok"]
+
+    ok = False
+    try:
+        probe = subprocess.run(
+            ["docker", "image", "inspect", SANDBOX_IMAGE],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        ok = probe.returncode == 0
+    except Exception:
+        ok = False
+
+    _image_probe["ok"] = ok
+    _image_probe["ts"] = now
+    if not ok and docker_daemon_up():
+        # daemon 活着才谈得上「镜像没构建」；docker 都没装时上面那条 warning 已经说过了
+        logger.warning(
+            "docker 可用但沙箱镜像 %s 未构建（需 `docker build -t %s -f Dockerfile.sandbox .`），"
+            "沙箱回退 subprocess 模式（仅限可信输入）",
+            SANDBOX_IMAGE,
+            SANDBOX_IMAGE,
         )
     return ok
 
@@ -238,8 +281,9 @@ class SandboxExecutor:
                     logger.warning("复制文件到沙箱失败 %s: %s", fpath, e)
 
         if self.backend == "docker":
-            # 优先 docker（硬隔离）；二进制缺失或 daemon 未启动 → 自动回退 subprocess
-            if docker_daemon_up():
+            # 优先 docker（硬隔离）；二进制缺失 / daemon 未启动 / 镜像未构建
+            # → 任一不满足都自动回退 subprocess（三者等价处理，别只判第一个）
+            if docker_daemon_up() and docker_image_ready():
                 result = self._run_docker(code, output_subdir, run_id, cancel_event)
             else:
                 result = self._run_subprocess(code, output_subdir, run_id, cancel_event)

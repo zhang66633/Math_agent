@@ -152,9 +152,22 @@ class SessionManager:
         self._save()
         return task
 
-    def delete(self, task_id: str) -> bool:
-        """Delete a task. Returns True if it existed."""
+    def delete(self, task_id: str, owner: str | None = None) -> bool:
+        """Delete a task. Returns True if it existed.
+
+        owner: 传入则先校验属主，不属于该 owner 时返回 False（路由层回 404）。
+                省略表示调用方已自行校验或是内部路径。
+
+        注意：这只删 sessions.json 里的记录。任务的落盘产物
+        （task_files/ task_events/ sessions/<id>/）由路由层的
+        _cleanup_task_data 负责——否则 sessions.json 清了、磁盘还留着。
+        """
         with self._lock:
+            task = self._tasks.get(task_id)
+            if owner is not None and (
+                task is None or task.get("owner", DEFAULT_TASK_OWNER) != owner
+            ):
+                return False
             existed = task_id in self._tasks
             if existed:
                 del self._tasks[task_id]

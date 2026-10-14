@@ -13,6 +13,14 @@ export function cancelTask(taskId: string) {
   return request.post(`/tasks/${taskId}/cancel`);
 }
 
+/**
+ * 删除任务及其全部落盘产物（task_files / task_events / sessions 工作记忆）。
+ * 2026-10-14 之前没有这个端点——任务只能增不能删，磁盘只增不减。
+ */
+export function deleteTask(taskId: string) {
+  return request.delete(`/tasks/${taskId}`);
+}
+
 export function getTask(taskId: string) {
   return request.get(`/tasks/${taskId}`);
 }

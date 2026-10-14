@@ -213,6 +213,7 @@
 </template>
 
 <script setup lang="ts">
+import { deleteTask } from "@/apis/commonApi";
 import VersionSwitcher from "@/components/VersionSwitcher.vue";
 import { useGuidedTour } from "@/composables/useGuidedTour";
 import { bottomItems, learnGroup, paperGroup } from "@/config/navItems";
@@ -390,6 +391,16 @@ function removeSession(row: SessionRow) {
   chatSession.deleteSession(row.mode, row.session.id);
   if (wasActive) {
     chatSession.clearActive(row.mode);
+  }
+  // 方案会话还要删掉后端的 task 本身。
+  // 2026-10-14 之前这里只删 conversation——用户在前端「删干净了」，但
+  // GET /api/tasks 仍返回全部任务，sessions.json 与三个数据目录只增不减
+  // （实测积到 31 个僵死任务 / 3.89 MB）。任务与 conversation 是两套存储。
+  const taskId = row.session.taskId;
+  if (row.mode === "solution" && taskId) {
+    deleteTask(taskId).catch((e) => {
+      console.warn("删除方案任务失败（会话已本地删除）:", e);
+    });
   }
 }
 

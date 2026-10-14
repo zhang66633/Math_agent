@@ -38,6 +38,10 @@ dependencies = [
     # 图论建模与 chart-templates 的 network_graph 模板都要用；
     # 沙箱镜像（Dockerfile.sandbox）需同步装，否则该模板在容器里必然 ImportError
     "networkx>=3.0",
+    # parquet 读写。项目自带的 2023C 竞赛数据（87.8 万行销售明细）就是 parquet，
+    # 缺它则 pd.read_parquet() 直接 ImportError——2026-10-14 实测本地与沙箱
+    # 都读不了自己的数据，DATA_README.md 里写的用法根本跑不通。
+    "pyarrow>=15.0",
     "python-docx>=1.0.0",
     "pdfplumber>=0.10.0",
     "click>=8.0.0",

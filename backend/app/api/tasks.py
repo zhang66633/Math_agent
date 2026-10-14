@@ -82,6 +82,36 @@ def _extract_attachment_text(file_id: str, filename: str) -> str:
             from .knowledge_search_routes import _extract_docx_text
 
             text = _extract_docx_text(data)
+        elif suffix == ".parquet":
+            # 2026-10-14 补：.parquet 进了上传白名单，附件摘要也要能读。
+            # 注意这条必须挂在**外层**链上——曾经误嵌进下面 xlsx/csv 那一支的
+            # 内部，而 .parquet 不在那个元组里，整块被跳过、掉进 else 把二进制
+            # 解成乱码灌进 LLM 上下文。
+            import io as _io
+
+            import pandas as pd
+
+            # 表格最多展示行数：与 xlsx/csv 分支同一套截断策略
+            _MAX_DF_ROWS = 100
+
+            def _df_to_text(df, title: str = "") -> str:
+                shape = f"{df.shape[0]} 行 × {df.shape[1]} 列"
+                head = f"{title}【{shape}】" if title else f"【{shape}】"
+                truncated = df.shape[0] > _MAX_DF_ROWS
+                df_show = df.head(_MAX_DF_ROWS) if truncated else df
+                try:
+                    table = df_show.to_markdown(index=False)
+                except Exception:
+                    table = df_show.to_csv(index=False)
+                tail = (
+                    f"\n…（共 {df.shape[0]} 行，仅展示前 {_MAX_DF_ROWS} 行）"
+                    if truncated
+                    else ""
+                )
+                return f"{head}\n{table}{tail}"
+
+            df = pd.read_parquet(_io.BytesIO(data))
+            text = _df_to_text(df, title=filename)
         elif suffix in (".xlsx", ".xls", ".csv", ".tsv"):
             import io as _io
 
@@ -310,6 +340,65 @@ async def cancel_task(task_id: str, user: GitHubUser | None = Depends(get_curren
     if not success:
         raise HTTPException(status_code=404, detail="任务不存在")
     return {"success": True, "message": "任务已取消"}
+
+
+def _cleanup_task_data(task_id: str) -> list[str]:
+    """删掉任务在磁盘上的全部产物。返回实际清掉的目录/文件清单。
+
+    漏一个都算没删干净——2026-10-14 实测：只删 sessions.json 记录时，
+    task_files/ 下 30 个目录、task_events/ 下 31 个 jsonl、sessions/ 下
+    50 个工作记忆目录全都留着，sessions.json 已涨到 3.89 MB 且只增不减。
+    """
+    import shutil
+
+    settings = get_settings()
+    root = settings.project_root / "data"
+    targets = [
+        ("task_files", root / "task_files" / task_id),
+        ("task_events", root / "task_events" / f"{task_id}.jsonl"),
+        ("sessions", root / "sessions" / task_id),
+    ]
+    cleaned = []
+    for label, p in targets:
+        try:
+            if p.is_dir():
+                shutil.rmtree(p, ignore_errors=True)
+                cleaned.append(label)
+            elif p.is_file():
+                p.unlink(missing_ok=True)
+                cleaned.append(label)
+        except Exception:
+            logger.warning("清理任务产物失败 %s", p, exc_info=True)
+    return cleaned
+
+
+@tasks_router.delete("/tasks/{task_id}")
+async def delete_task(task_id: str, user: GitHubUser | None = Depends(get_current_user)):
+    """删除任务及其全部落盘产物。
+
+    2026-10-14 补：此前 /api/tasks 只有 GET/POST，**任务只能增不能删**，
+    sessions.json 与三个数据目录只增不减（实测已积 31 个僵死任务、
+    3.89 MB）。前端「删除会话」删的只是 conversation，与任务无关。
+
+    顺序：先取消（在跑的任务要先让编排器停，否则它会在删完后继续写产物）→
+    清磁盘 → 删记录。三步都走线程池，不占事件循环。
+    """
+    uid = resolve_user_id(user)
+    if not get_session_manager().get_owned(task_id, uid):
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    # 终态任务无需取消，但运行中的必须先停，否则编排器随后又会写回产物
+    task = get_session_manager().get_owned(task_id, uid)
+    if task and task.get("status") not in _TERMINAL_TASK_STATUSES:
+        await asyncio.to_thread(get_session_manager().cancel, task_id, uid)
+
+    cleaned = await asyncio.to_thread(_cleanup_task_data, task_id)
+    deleted = await asyncio.to_thread(get_session_manager().delete, task_id, uid)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    logger.info("任务已删除 %s，清理产物 %s", task_id, cleaned)
+    return {"success": True, "task_id": task_id, "cleaned": cleaned}
 
 
 @tasks_router.get("/tasks", response_model=list[TaskResponse])

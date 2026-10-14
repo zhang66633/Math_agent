@@ -50,6 +50,10 @@ ALLOWED_EXTENSIONS = {
     ".md",
     ".docx",
     ".doc",
+    # 2026-10-14 补：项目自带的 2023C 竞赛数据就是 parquet（87.8 万行销售明细），
+    # 沙箱内 pandas+pyarrow 可直接 read_parquet。不加这一条，用户只能先把
+    # parquet 转 CSV 才能上传——而大文件转 CSV 很容易超 20MB 上限。
+    ".parquet",
 }
 
 

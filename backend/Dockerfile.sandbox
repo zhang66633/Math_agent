@@ -30,6 +30,7 @@ RUN pip install --no-cache-dir \
     matplotlib \
     seaborn \
     networkx \
+    pyarrow \
     sympy \
     cvxpy \
     openpyxl \

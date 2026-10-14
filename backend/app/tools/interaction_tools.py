@@ -169,6 +169,13 @@ class RunCodeTool(BaseTool):
                         ".txt",
                         ".json",
                         ".dat",
+                        # 2026-10-14 补：.parquet 与 .md。项目自带的 2023C 数据
+                        # （含 87.8 万行销售明细与一批 _precomputed_*.parquet 聚合）
+                        # 全是 parquet，DATA_README.md 也是照着「沙箱里
+                        # pd.read_parquet()」设计的——但这两个后缀一直不在白名单里，
+                        # 于是那套预计算数据从未真正进过沙箱。
+                        ".parquet",
+                        ".md",
                     ):
                         extra_files.append(str(f))
                         logger.info("自动挂载数据文件: %s", f.name)

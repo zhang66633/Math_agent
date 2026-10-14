@@ -21,6 +21,21 @@ logger = logging.getLogger(__name__)
 
 tasks_router = APIRouter()
 
+# 后台任务的强引用集合。asyncio.create_task 的返回值**必须**被持有：
+# 事件循环只持弱引用，fire-and-forget 的 Task 会在开始执行前被 GC 回收
+# （Python 官方文档明确警告）。2026-10-14 实测：服务跑了 50 分钟后，
+# 31 个任务全部卡在 status=running / messages=0，编排器线程从未启动——
+# 正是这个原因。完成后自动 discard，不会无限增长。
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _spawn_background(coro) -> asyncio.Task:
+    """创建后台任务并持有强引用，防止被 GC 回收。"""
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return task
+
 
 def _owned_task_or_404(task_id: str, owner: str) -> dict:
     """按属主取任务，不存在/不属于本人一律 404。
@@ -194,8 +209,10 @@ async def create_task(
     await asyncio.to_thread(WorkingMemory(task_id).init_session, full_problem)
 
     # 在独立线程中运行编排器（节点含同步阻塞调用 llm.invoke / subprocess），
-    # 以免阻塞事件循环导致 HTTP 响应体无法刷新、WS 进度卡住
-    asyncio.create_task(
+    # 以免阻塞事件循环导致 HTTP 响应体无法刷新、WS 进度卡住。
+    # 必须走 _spawn_background 持有强引用——直接 asyncio.create_task 的 Task
+    # 会被 GC 回收，表现为「任务建成功但永远 running、0 条消息」。
+    _spawn_background(
         asyncio.to_thread(_run_orchestrator_sync, task_id, full_problem, req.mode, key_uid)
     )
 

@@ -117,7 +117,7 @@ function sendMessage() {
       <button
         class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-border bg-background hover:bg-accent transition-colors disabled:opacity-50"
         :disabled="isRunning || uploading"
-        title="上传文件（CSV/Excel/TXT/PDF 等）"
+        title="上传文件（CSV/Excel/Parquet/TXT/PDF 等）"
         @click="triggerFileInput"
       >
         <Loader2 v-if="uploading" class="h-4 w-4 animate-spin" />
@@ -128,7 +128,7 @@ function sendMessage() {
         type="file"
         class="hidden"
         multiple
-        accept=".csv,.xlsx,.xls,.txt,.md,.json,.pdf,.py,.dat,.tsv"
+        accept=".csv,.tsv,.xlsx,.xls,.parquet,.txt,.md,.json,.pdf,.py,.dat,.mat,.doc,.docx"
         @change="onFileSelected"
       />
       <textarea

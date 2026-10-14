@@ -13,6 +13,7 @@ from ..learning.schemas import (
     SelfAssessment,
     UserProfile,
 )
+from ..services.profile_store import get_profile_store
 
 profile_router = APIRouter(prefix="/profile", tags=["Profile"])
 
@@ -37,15 +38,19 @@ class ProfileResponse(BaseModel):
     profile: UserProfile
 
 
-# ── 内存存储 (后续可替换为数据库) ─────────────────────
-
-_profiles: dict[str, UserProfile] = {}
+# ── 存储 ──────────────────────────────────────────────────
+# 画像落 SQLite（data/learning.db 的 profiles 表）。此前是进程内存字典
+# `_profiles`——重启即失，且角色切换器接入后画像成了首页「继续学习」卡的判据，
+# 不能再放内存里（审计 2026-10-14 第 11.2 节）。
 
 
 def _get_or_create(user_id: str) -> UserProfile:
-    if user_id not in _profiles:
-        _profiles[user_id] = UserProfile(user_id=user_id)
-    return _profiles[user_id]
+    store = get_profile_store()
+    profile = store.get(user_id)
+    if profile is None:
+        profile = UserProfile(user_id=user_id)
+        store.save(profile)
+    return profile
 
 
 def _uid(user: GitHubUser | None) -> str:
@@ -95,6 +100,8 @@ async def diagnose(
         profile.self_assessment = SelfAssessment(**req.self_assessment)
 
     profile.updated_at = datetime.now()
+    # 落库：画像已是 SQLite 持久对象，改完必须显式保存（内存字典时代靠引用突变）
+    get_profile_store().save(profile)
     return ProfileResponse(profile=profile)
 
 

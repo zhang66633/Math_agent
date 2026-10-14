@@ -15,8 +15,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app.api.profile_routes import _profiles  # noqa: E402
 from app.main import app  # noqa: E402
+from app.services.profile_store import ProfileStore, get_profile_store  # noqa: E402
+
+# 直接构造 store 用的别名（测试里显式传 db_path，不走单例）
+ProfileStoreForTest = ProfileStore
 
 OWNER = "diag_probe"
 
@@ -28,8 +31,8 @@ def _auth() -> dict[str, str]:
     return {"Authorization": f"Bearer {create_jwt(GitHubUser(id=11, login=OWNER, name='p'))}"}
 
 
-def _reset():
-    _profiles.pop(OWNER, None)
+def _reset(user_id: str = OWNER) -> None:
+    get_profile_store().delete(user_id)
 
 
 def test_role_only_call_sets_roles():
@@ -145,5 +148,55 @@ def test_profiles_isolated_per_user():
             assert ra["roles"][0]["role"] == "writer"
             assert rb["roles"][0]["role"] == "modeler"
     finally:
-        _profiles.pop("diag_a", None)
-        _profiles.pop("diag_b", None)
+        _reset("diag_a")
+        _reset("diag_b")
+
+
+# ── 持久化（重启不丢） ────────────────────────────────────
+
+
+def test_diagnose_persists_to_store():
+    """走 HTTP 写一次，store 里必须能直接读到——证明落了库而不是只在内存。"""
+    _reset()
+    try:
+        with TestClient(app) as c:
+            c.post("/api/profile/diagnose", json={"role": "writer"}, headers=_auth())
+            stored = get_profile_store().get(OWNER)
+            assert stored is not None, "diagnose 没有落库"
+            assert [r.role.value for r in stored.roles] == ["writer"]
+    finally:
+        _reset()
+
+
+def test_profile_survives_store_recreation(tmp_path):
+    """模拟重启：新建一个指向同一库文件的 store，画像必须还在。"""
+    db = tmp_path / "restart_profile.db"
+    from app.learning.schemas import UserProfile
+
+    first = ProfileStoreForTest(db)
+    first.save(UserProfile(user_id="restart_probe", nickname="哲"))
+
+    # 换一个全新实例（等价于进程重启后重新打开单例）
+    second = ProfileStoreForTest(db)
+    loaded = second.get("restart_probe")
+    assert loaded is not None, "重启后画像丢了"
+    assert loaded.nickname == "哲"
+
+
+def test_store_returns_none_for_unknown_user():
+    _reset("never_existed")
+    assert get_profile_store().get("never_existed") is None
+
+
+def test_corrupt_row_does_not_break_reads(tmp_path):
+    """单行损坏按「不存在」处理并告警，不让整个画像功能不可用。"""
+    db = tmp_path / "corrupt_profile.db"
+    store = ProfileStoreForTest(db)
+    with store._get_conn() as conn:
+        conn.execute(
+            "INSERT INTO profiles(user_id, profile_json, created_at, updated_at)"
+            " VALUES (?, ?, ?, ?)",
+            ("broken", "{not json", "t", "t"),
+        )
+        conn.commit()
+    assert store.get("broken") is None

@@ -21,6 +21,11 @@ export function deleteTask(taskId: string) {
   return request.delete(`/tasks/${taskId}`);
 }
 
+/** 列出当前用户的方案任务（按创建时间倒序）。 */
+export function listTasks() {
+  return request.get("/tasks");
+}
+
 export function getTask(taskId: string) {
   return request.get(`/tasks/${taskId}`);
 }

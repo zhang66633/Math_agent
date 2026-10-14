@@ -41,6 +41,41 @@
           Task ID: {{ currentTaskId }}
         </div>
 
+        <!-- 历史任务入口
+             2026-10-14 补：taskId 原本只存在浏览器 localStorage 的 session 上，
+             删掉会话（或换浏览器/清缓存）后，后端任务数据完好却再也打不开——
+             「任务孤儿化」。这里直接列后端任务，给一个与会话无关的入口。 -->
+        <div class="mt-2">
+          <button
+            class="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+            :disabled="historyLoading"
+            @click="toggleHistory"
+          >
+            <History class="h-3 w-3" />
+            {{ historyOpen ? "收起历史任务" : "历史任务" }}
+            <span v-if="historyTasks.length" class="font-mono">({{ historyTasks.length }})</span>
+          </button>
+
+          <div v-if="historyOpen" class="mt-2 space-y-1">
+            <div v-if="historyLoading" class="text-[11px] text-muted-foreground">加载中…</div>
+            <div v-else-if="historyTasks.length === 0" class="text-[11px] text-muted-foreground">
+              暂无历史任务
+            </div>
+            <button
+              v-for="t in historyTasks"
+              :key="t.task_id"
+              class="block w-full truncate rounded-md border border-border px-2 py-1.5 text-left text-[11px] hover:bg-accent transition-colors"
+              :class="t.task_id === currentTaskId ? 'border-primary/50 bg-accent/60' : ''"
+              :title="t.problem"
+              @click="openHistoryTask(t.task_id)"
+            >
+              <span class="font-mono text-muted-foreground">{{ t.task_id }}</span>
+              <span class="ml-1.5">{{ statusLabel(t.status) }}</span>
+              <span class="ml-1.5 text-muted-foreground">{{ t.problem.slice(0, 18) }}</span>
+            </button>
+          </div>
+        </div>
+
         <!-- 交付物面板（dsh 式 deliverables：图表 / 数据文件 / 文档导出统一 dock）
              分组、正文/过程标注与尺寸展示都在组件内，便于单测与复用 -->
         <DeliverablesPanel
@@ -88,6 +123,7 @@ import {
   createTask,
   getTask,
   getTaskFiles,
+  listTasks,
 } from "@/apis/commonApi";
 import ChatArea from "@/components/ChatArea.vue";
 import ProgressTimeline, {
@@ -102,7 +138,7 @@ import type { ChatSession } from "@/stores/chatSession";
 import { useChatSessionStore } from "@/stores/chatSession";
 import { useTaskStore } from "@/stores/task";
 import type { Message } from "@/types/response";
-import { PanelRight, X } from "lucide-vue-next";
+import { History, PanelRight, X } from "lucide-vue-next";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 const chatSession = useChatSessionStore();
@@ -537,6 +573,63 @@ watch(
   () => chatSession.activeSolutionId,
   () => applySessionTask(chatSession.activeSolutionSession),
 );
+
+// ── 历史任务（与 session 无关的任务入口）──────────────────
+
+interface HistoryTask {
+  task_id: string;
+  status: string;
+  problem: string;
+}
+
+const historyOpen = ref(false);
+const historyLoading = ref(false);
+const historyTasks = ref<HistoryTask[]>([]);
+
+const STATUS_LABELS: Record<string, string> = {
+  running: "进行中",
+  completed: "已完成",
+  failed: "失败",
+  cancelled: "已取消",
+};
+
+function statusLabel(s: string): string {
+  return STATUS_LABELS[s] ?? s;
+}
+
+async function toggleHistory() {
+  historyOpen.value = !historyOpen.value;
+  // 每次展开都重新拉一次：任务状态会变（跑完/被删），缓存会撒谎
+  if (!historyOpen.value) return;
+  historyLoading.value = true;
+  try {
+    const res = await listTasks();
+    const list = (res.data?.data ?? res.data ?? []) as HistoryTask[];
+    historyTasks.value = Array.isArray(list) ? list : [];
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    toast(`加载历史任务失败：${msg}`, "error");
+  } finally {
+    historyLoading.value = false;
+  }
+}
+
+/**
+ * 打开一个历史任务。
+ *
+ * taskId 必须落到某个方案 session 上——onMounted 的刷新恢复读的是
+ * session.taskId。没有会话就新建一个承载它（否则刷新后又会丢）。
+ */
+function openHistoryTask(taskId: string) {
+  let sess = chatSession.activeSolutionSession;
+  if (!sess) {
+    chatSession.newSession("solution");
+    sess = chatSession.activeSolutionSession;
+  }
+  if (sess) sess.taskId = taskId;
+  applySessionTask(sess ?? null);
+  historyOpen.value = false;
+}
 
 // task_end 后 taskStore.isRunning=false，同步 solution 的 runningMode
 watch(

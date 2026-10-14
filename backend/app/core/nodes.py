@@ -43,6 +43,12 @@ from .node_helpers import (  # noqa: F401  (god-files 拆分 #31：辅助函数�
 )
 from .prompts._shared import render_prompt
 from .prompts.classifier import CLASSIFIER_SYSTEM_PROMPT, CLASSIFIER_USER_TEMPLATE
+
+# 送去检索的 query 上限（字符）。problem_raw 可能被 _build_problem_with_attachments
+# 追加附件摘要（上限 50000 字符），直接当 query 会一次撞穿小模型的 8192 token
+# 上限——实测 2026-10-14：deepseek 端 400，向量检索整条降级，只剩 BM25 + 标签召回。
+# 题目主旨都在开头（背景 + 问题），尾部是附件表格，取头部即可。
+_MAX_RETRIEVAL_QUERY_CHARS = 1500
 from .prompts.planner import PLANNER_SYSTEM_PROMPT, PLANNER_USER_TEMPLATE
 from .skill_context import catalog_for_problem
 
@@ -220,7 +226,20 @@ def retrieve_knowledge(state: AgentState) -> dict:
         from ..knowledge.retriever import get_shared_retriever
 
         retriever = get_shared_retriever()
-        docs = retriever.invoke(state["problem_raw"], k=5)
+        # 检索只取题面的「要点」，不喂全文。
+        # problem_raw 可能被 _build_problem_with_attachments 追加了附件摘要
+        # （上限 50000 字符），直接当 query 会一次撞穿小模型的 8192 token 上限——
+        # 2026-10-14 实测：deepseek 端 400，向量检索整条降级，只剩 BM25 与标签召回。
+        # 题目主旨都在开头（背景+问题），尾部是附件表格，取头部即可。
+        _q = state["problem_raw"]
+        if len(_q) > _MAX_RETRIEVAL_QUERY_CHARS:
+            logger.info(
+                "检索 query 过长（%d 字符），截断到 %d 字符",
+                len(_q),
+                _MAX_RETRIEVAL_QUERY_CHARS,
+            )
+            _q = _q[:_MAX_RETRIEVAL_QUERY_CHARS]
+        docs = retriever.invoke(_q, k=5)
         for doc in docs:
             meta = doc.metadata
             doc_id = meta.get("id", "")
@@ -311,20 +330,33 @@ def retrieve_knowledge(state: AgentState) -> dict:
     )
 
     # ── 数据文件发现：找到匹配问题对应的本地数据文件目录 ──
-    data_files_list: list[dict] = []
-    data_files_dir = ""
+    #
+    # ⚠️ 必须**增量合并**到 state 已有值，不能从空列表重新算。
+    # LangGraph 会把本节点返回的键覆盖进 state，所以这里返回 [] 就等于把
+    # _run_orchestrator 初始化时放进来的「用户上传附件」全部抹掉——
+    # 2026-10-14 实测踩到：附件已复制进 task_files/{id}/_inputs/、data_files
+    # 也传进了 create_initial_state，但本节点一返回空列表，
+    # data_preprocessing_agent 的跳过条件立刻又成立（「无数据文件，跳过」），
+    # 求解 agent 也被打回「没有预挂载数据文件」的构造模拟数据分支。
+    data_files_list: list[dict] = list(state.get("data_files") or [])
+    data_files_dir = state.get("data_files_dir") or ""
+    _kb_found = 0
     for p in problems:
         files = p.get("data_files") or []
         if files:
             data_files_list.extend(files)
-            # 尝试在 data/problems/ 下查找对应目录
+            _kb_found += len(files)
+            # 尝试在 data/problems/ 下查找对应目录；已有目录（上传附件）时不覆盖
             year = p.get("year")
             pid = p.get("problem_id")
-            if year and pid:
+            if year and pid and not data_files_dir:
                 candidate = settings.project_root / "data" / "problems" / f"{year}{pid}"
                 if candidate.exists():
                     data_files_dir = str(candidate.resolve())
                     break
+
+    # 日志/消息里只报「本次从知识库新发现」的数量，避免把用户附件算成 KB 命中
+    _total_files = len(data_files_list)
 
     return {
         "kb_methods": methods,
@@ -338,7 +370,8 @@ def retrieve_knowledge(state: AgentState) -> dict:
                 content=f"知识库检索: 找到 {len(methods)} 个方法, "
                 f"{len(papers)} 篇论文, {len(templates)} 个模板, "
                 f"{len(problems)} 道竞赛真题"
-                + (f", 数据文件 {len(data_files_list)} 个" if data_files_list else "")
+                + (f", 数据文件 {_total_files} 个" if _total_files else "")
+                + (f"（其中知识库附带 {_kb_found} 个）" if _kb_found else "")
             )
         ],
     }
@@ -361,8 +394,13 @@ def plan_execution(state: AgentState) -> dict:
             from app.services.episodic_memory import EpisodicMemory
 
             em = EpisodicMemory()
+            # 与检索同理：别把「题目 + 附件摘要」整份当 query 送去 embedding，
+            # 会撞穿模型上下文上限（实测 2026-10-14：情景记忆召回 400）。
+            _mem_q = state["problem_raw"]
+            if len(_mem_q) > _MAX_RETRIEVAL_QUERY_CHARS:
+                _mem_q = _mem_q[:_MAX_RETRIEVAL_QUERY_CHARS]
             exps = em.recall(
-                query=state["problem_raw"],
+                query=_mem_q,
                 problem_type=state.get("problem_type", ""),
                 k=3,
             )

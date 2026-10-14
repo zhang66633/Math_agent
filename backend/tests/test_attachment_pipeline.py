@@ -170,12 +170,70 @@ def test_no_attachments_means_no_inputs_dir():
         mgr.delete(tid, "test_att_owner")
 
 
+# ── 端到端实测踩到的两个坑（只跑单测抓不到）──────────────────
+
+
+def test_retrieve_node_does_not_wipe_uploaded_data_files():
+    """retrieve_knowledge 必须增量合并 data_files，不能返回空列表覆盖。
+
+    2026-10-14 实测：附件已复制进 _inputs、data_files 也传进了
+    create_initial_state，但 retrieve_knowledge 返回 `"data_files": []`
+    （KB 里 38 道题的 data_files 全是 []），LangGraph 把它覆盖进 state，
+    于是 data_preprocessing 的跳过条件立刻又成立——单测能过、真跑必挂。
+    """
+    import inspect
+
+    from app.core import nodes as nodes_mod
+
+    src = inspect.getsource(nodes_mod.retrieve_knowledge)
+    assert "list(state.get(\"data_files\") or [])" in src, (
+        "retrieve_knowledge 又从空列表重新算了 data_files——会把上传附件抹掉"
+    )
+    assert "state.get(\"data_files_dir\") or \"\"" in src, (
+        "retrieve_knowledge 又从空串重新算了 data_files_dir"
+    )
+
+
+def test_retrieval_query_is_capped():
+    """送去检索的 query 必须截断，否则长题面（含附件摘要）会撞穿模型上下文上限。
+
+    实测 2026-10-14：problem_raw 8193 tokens > deepseek 的 8192 上限，
+    向量检索整条 400 降级，只剩 BM25 + 标签召回。题目主旨都在开头。
+    """
+    from app.core import nodes as nodes_mod
+
+    assert hasattr(nodes_mod, "_MAX_RETRIEVAL_QUERY_CHARS")
+    cap = nodes_mod._MAX_RETRIEVAL_QUERY_CHARS
+    assert 500 <= cap <= 4000, f"截断上限 {cap} 不合理（太小丢语义、太大仍会超限）"
+
+    import inspect
+
+    src = inspect.getsource(nodes_mod.retrieve_knowledge)
+    assert "_MAX_RETRIEVAL_QUERY_CHARS" in src, "检索入口没做截断"
+    assert "retriever.invoke(_q" in src, "截断后的 query 没被真正用于检索"
+
+
+def test_retrieval_cap_actually_bounds_a_long_problem():
+    """模拟长题面：截断后长度必须真的落回上限内。"""
+    from app.core.nodes import _MAX_RETRIEVAL_QUERY_CHARS
+
+    long_problem = "蔬菜定价与补货" * 3000  # 24000 字符
+    q = long_problem
+    if len(q) > _MAX_RETRIEVAL_QUERY_CHARS:
+        q = q[:_MAX_RETRIEVAL_QUERY_CHARS]
+    assert len(q) == _MAX_RETRIEVAL_QUERY_CHARS
+    assert q.startswith("蔬菜定价")  # 保留头部（题目主旨）
+
+
 if __name__ == "__main__":
     for _fn in [
         test_uploads_reach_state_and_inputs_dir,
         test_skip_condition_no_longer_always_true,
         test_sandbox_can_read_staged_input,
         test_no_attachments_means_no_inputs_dir,
+        test_retrieve_node_does_not_wipe_uploaded_data_files,
+        test_retrieval_query_is_capped,
+        test_retrieval_cap_actually_bounds_a_long_problem,
     ]:
         _fn()
         print(f"PASSED {_fn.__name__}")

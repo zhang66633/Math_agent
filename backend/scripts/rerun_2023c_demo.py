@@ -8,8 +8,13 @@
 结果摘要都在里面，不依赖任何临时状态。
 
 用法：
-    python scripts/rerun_2023c_demo.py                # 前台跑，直到完成或 40 分钟超时
-    python scripts/rerun_2023c_demo.py --no-poll      # 只建任务，不等待（后台自己跑）
+    python scripts/rerun_2023c_demo.py                     # 匿名创建（owner=访客桶）
+    python scripts/rerun_2023c_demo.py --as zhang66633     # 以该用户身份创建（推荐）
+    python scripts/rerun_2023c_demo.py --no-poll           # 只建任务，不等待完成
+
+> ⚠️ 用 `--as` 的原因：任务按属主过滤。匿名创建时 owner 落在访客桶
+> （resolve_user_id → "default"），登录 zhang66633 后 `GET /api/tasks`
+> 会返回空，前端「历史任务」面板看不到。以登录身份创建才能两边都对上。
 
 产物：
     data/_last_rerun.json   — task_id / 状态 / 字数 / 图表数 / 耗时
@@ -133,7 +138,23 @@ def upload(c: httpx.Client, files: list[Path]) -> list[dict]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--no-poll", action="store_true", help="只建任务，不等待完成")
+    ap.add_argument(
+        "--as",
+        dest="as_login",
+        default="",
+        metavar="LOGIN",
+        help="以该 GitHub 用户身份创建任务（置 owner，避免落在访客桶看不见）",
+    )
     args = ap.parse_args()
+
+    headers: dict[str, str] = {}
+    if args.as_login:
+        # 本地签一枚 JWT：与 .env 里同一份 secret，服务端认
+        from app.auth import create_jwt
+        from app.auth.schemas import GitHubUser
+
+        headers["Authorization"] = f"Bearer {create_jwt(GitHubUser(id=1, login=args.as_login))}"
+        print(f"以 {args.as_login} 身份创建任务（owner 会对上，登录后可见）")
 
     files = prepare_data()
 
@@ -142,12 +163,21 @@ def main() -> int:
         refs = upload(c, files)
 
         print(f"\n=== 创建方案任务（{len(refs)} 个附件）===")
-        r = c.post("/api/tasks", json={"problem": PROBLEM, "mode": "execute", "files": refs})
+        r = c.post(
+            "/api/tasks",
+            json={"problem": PROBLEM, "mode": "execute", "files": refs},
+            headers=headers,
+        )
         r.raise_for_status()
         tid = r.json()["task_id"]
         print(f"task_id = {tid}")
 
-        summary = {"task_id": tid, "status": "running", "seconds": 0}
+        summary = {
+            "task_id": tid,
+            "status": "running",
+            "seconds": 0,
+            "owner": args.as_login or "guest(访客桶)",
+        }
         if args.no_poll:
             print("\n（--no-poll：任务在后台跑，稍后自行查询）")
             OUT.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -160,9 +190,9 @@ def main() -> int:
         st = {}
         while time.time() - t0 < 2400:
             time.sleep(20)
-            st = c.get(f"/api/tasks/{tid}").json()
+            st = c.get(f"/api/tasks/{tid}", headers=headers).json()
             cur = st.get("status")
-            msgs = c.get(f"/api/tasks/{tid}/messages").json()
+            msgs = c.get(f"/api/tasks/{tid}/messages", headers=headers).json()
             if cur != last:
                 print(f"  [{time.time()-t0:6.0f}s] status={cur}  messages={len(msgs)}")
             last = cur
@@ -174,10 +204,11 @@ def main() -> int:
         summary = {
             "task_id": tid,
             "status": st.get("status"),
+            "owner": args.as_login or "guest(访客桶)",
             "final_len": len(st.get("final_response") or ""),
             "figures": len(figs),
-            "messages": len(c.get(f"/api/tasks/{tid}/messages").json()),
-            "events": c.get(f"/api/tasks/{tid}/events").json().get("total"),
+            "messages": len(c.get(f"/api/tasks/{tid}/messages", headers=headers).json()),
+            "events": c.get(f"/api/tasks/{tid}/events", headers=headers).json().get("total"),
             "seconds": round(time.time() - t0),
         }
         OUT.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -187,8 +218,11 @@ def main() -> int:
             print(f"  {k:<10} {v}")
         print(f"\n已写入 {OUT}")
         print(f"\n前端打开：方案模式 → 右栏「历史任务」→ 选 {tid}")
-        print("（需已登录 zhang66633；任务匿名创建时 owner 是访客桶，登录后看不到——"
-              "见下方说明）")
+        if not args.as_login:
+            print(
+                "⚠️ 本次匿名创建（owner=访客桶）。若你登录着，前端看不到它——"
+                "建议加 `--as zhang66633` 重跑。"
+            )
 
     return 0
 

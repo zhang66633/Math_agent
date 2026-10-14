@@ -86,11 +86,16 @@ def data_preprocessing_agent_node(state: AgentState) -> dict:
     if data_files:
         lines = ["\n## 可用数据文件（已挂载到工作目录，代码中直接用文件名读取）"]
         for df in data_files:
-            lines.append(
-                f"- `{df.get('filename', '?')}`: "
-                f"{df.get('rows', '?')}行, "
-                f"列: {', '.join(df.get('columns', []))}"
-            )
+            # rows/columns 可能没有（上传时只记录了文件名与大小）——别输出 "？行"
+            meta = []
+            if df.get("rows") is not None:
+                meta.append(f"{df.get('rows')}行")
+            if df.get("columns"):
+                meta.append(f"列: {', '.join(df['columns'])}")
+            if df.get("size"):
+                meta.append(f"{df['size']/1024:.0f} KB")
+            suffix = f"（{', '.join(meta)}）" if meta else ""
+            lines.append(f"- `{df.get('filename', '?')}`{suffix}")
         data_files_context = "\n".join(lines)
 
     # 技能装配：图表规范等（绘图主要发生在数据探索的沙箱代码里）

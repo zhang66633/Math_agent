@@ -113,11 +113,16 @@ def solving_agent_node(state: AgentState) -> dict:
     if data_files_list:
         _lines = ["题目数据文件已挂载到沙箱工作目录，**直接用文件名读取，不要传 file_ids**："]
         for df in data_files_list:
-            _lines.append(
-                f"- `{df.get('filename', '?')}`: "
-                f"{df.get('rows', '?')}行, "
-                f"列: {', '.join(df.get('columns', []))}"
-            )
+            # rows/columns 可能没有（上传时只记录了文件名与大小）——别输出 "？行"
+            meta = []
+            if df.get("rows") is not None:
+                meta.append(f"{df.get('rows')}行")
+            if df.get("columns"):
+                meta.append(f"列: {', '.join(df['columns'])}")
+            if df.get("size"):
+                meta.append(f"{df['size']/1024:.0f} KB")
+            suffix = f"（{', '.join(meta)}）" if meta else ""
+            _lines.append(f"- `{df.get('filename', '?')}`{suffix}")
         _lines.append(
             "用 pd.read_csv / pd.read_excel / pd.read_parquet 按扩展名选择读取方式；"
             "大文件优先采样或聚合后再分析。"

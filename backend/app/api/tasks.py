@@ -433,6 +433,8 @@ def _run_orchestrator_sync(task_id: str, problem: str, mode: str, user_id: str =
 async def _run_orchestrator(task_id: str, problem: str, mode: str, user_id: str = "guest"):
     """在后台运行 LangGraph 编排器。"""
     try:
+        import shutil
+
         from app.core.nodes import TaskCancelledError, _is_cancelled
         from app.core.state import create_initial_state
         from app.core.workflow import get_orchestrator
@@ -441,17 +443,61 @@ async def _run_orchestrator(task_id: str, problem: str, mode: str, user_id: str 
         active_key = get_active_api_key(user_id)
 
         orchestrator = get_orchestrator()
+
+        # ── 把上传的附件接入 state（2026-10-14 修复，此前是死路）──
+        # 缺陷：create_initial_state 从来没收 data_files / data_files_dir，而
+        #   - KB 侧 38 道题的 data_files 全是 [] → retrieve_knowledge 也填不上；
+        #   - nodes.py 还刻意不给自定义题挂 data_files（怕误挂别人的数据集）。
+        # 结果两个字段恒为空，连带三处后果：
+        #   ① data_preprocessing_agent 的跳过条件恒为真 → 该 agent 是死代码；
+        #   ② solving agent 的提示词走 else 分支，被告知「没有预挂载数据文件，
+        #      请构造模拟数据」→ 用户上传的真实附件只有前 100 行被内联进题面文本，
+        #      沙箱里根本读不到，模型转而编数据；
+        #   ③ data_files_dir 为空 → RunCodeTool 的自动挂载不触发。
+        # 修法：按 task 的 uploaded 附件，复制到该任务自己的 _inputs 目录，
+        # 同时填 data_files（元数据）与 data_files_dir（自动挂载路径）。
+        session_mgr = get_session_manager()
+        settings = get_settings()
+        task_rec = session_mgr.get(task_id) or {}
+        inputs_dir = settings.project_root / "data" / "task_files" / task_id / "_inputs"
+        uploaded: list[dict] = []
+        for a in task_rec.get("artifacts") or []:
+            if a.get("type") != "uploaded":
+                continue
+            name = a.get("name") or ""
+            fid = (a.get("url") or "").rsplit("/", 1)[-1]
+            if not name or not fid:
+                continue
+            uploaded.append({"file_id": fid, "filename": name, "size": a.get("size", 0)})
+            # 复制进任务输入目录，使 RunCodeTool 的 data_files_dir 自动挂载生效。
+            # 用子目录而不是 task_files/{id}/ 本身——后者还要放图表/CSV 输出，
+            # 混在一起会被后续 run_code 的自动挂载反复拷进沙箱。
+            try:
+                src_matches = list(
+                    (settings.project_root / "data" / "uploads").glob(f"{fid}.*")
+                )
+                if src_matches:
+                    inputs_dir.mkdir(parents=True, exist_ok=True)
+                    dst = inputs_dir / name
+                    if not dst.exists():
+                        shutil.copy2(src_matches[0], dst)
+            except Exception:
+                logger.warning("暂存任务附件失败 %s", name, exc_info=True)
+
         state = create_initial_state(
             problem_raw=problem,
             mode=mode,
             session_id=task_id,
             api_key_config=active_key,
+            data_files=uploaded,
+            data_files_dir=str(inputs_dir) if uploaded else "",
         )
+        if uploaded:
+            logger.info("任务 %s 接入 %d 个上传附件", task_id, len(uploaded))
 
         # 流式运行 — 每个节点完成后立即写入进度消息
         # （进度事件的 Redis 发布 + JSONL 落盘统一由节点侧 _pub_event 负责，
         #   编排循环不再二次发布——见下方注释）
-        session_mgr = get_session_manager()
 
         node_meta = {
             "classify_problem": ("问题分类", "识别问题类型与复杂度"),

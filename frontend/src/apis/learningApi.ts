@@ -70,6 +70,19 @@ export function fetchProfile() {
   return request.get("/profile");
 }
 
+/** 把当前角色写进服务端画像。
+ *
+ *  为什么需要：GET /profile 的 roles 只有 /profile/diagnose 一个写入口，而前端
+ *  此前从不调用它 → roles 恒为空 → 首页「继续学习」卡（按 roles.length 判断）
+ *  永远不显示（审计 2026-10-14 第 11.2 节）。角色切换器现在每次切角色调一次。
+ *
+ *  只发 role：后端 diagnose 是合并语义，不提供的 goal / weekly_hours /
+ *  self_assessment 会保留画像现值，不会把用户已填的目标冲掉。
+ */
+export function saveRoleToProfile(role: string) {
+  return request.post("/profile/diagnose", { role });
+}
+
 /** 获取学习进度 */
 export function fetchProgress() {
   return request.get("/profile/progress");

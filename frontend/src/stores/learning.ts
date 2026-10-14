@@ -7,6 +7,7 @@ import {
   fetchLearningPath,
   fetchUnitDetail,
   markUnitComplete,
+  saveRoleToProfile,
 } from "@/apis/learningApi";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
@@ -98,10 +99,18 @@ export const useLearningStore = defineStore("learning", () => {
     }
   }
 
-  function switchRole(role: AgentRole) {
+  async function switchRole(role: AgentRole) {
     currentRole.value = role;
     currentUnit.value = null;
-    loadPath(role);
+    await loadPath(role);
+    // 把角色同步到服务端画像：否则 GET /profile 的 roles 恒为空，首页「继续学习」
+    // 卡永远不显示（审计 2026-10-14 第 11.2 节）。本地切换优先，写画像失败只警告
+    // 不阻断——它是后台同步，不是主线功能。
+    try {
+      await saveRoleToProfile(role);
+    } catch (e) {
+      console.warn("角色写入服务端画像失败（不影响本地切换）:", e);
+    }
   }
 
   return {

@@ -1,5 +1,7 @@
 """用户画像 API — 角色选择、水平诊断、进度查询."""
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
@@ -23,8 +25,12 @@ class DiagnoseRequest(BaseModel):
     self_assessment: dict | None = (
         None  # {math_level, programming_level, writing_level, modeling_experience}
     )
-    goal: str = "国赛"
-    weekly_hours: int = 10
+    # goal / weekly_hours 传 None 表示「保留现值」。角色切换器每次切角色都会调本
+    # 端点，若每次都拿默认值覆盖，用户在一次完整诊断里填下的目标就被冲掉了
+    # （审计 2026-10-14 第 11.2 节：画像此前根本没有写入口，切换器接入时不能
+    #  顺手引入另一个「重复调用即丢数据」的坑）。
+    goal: str | None = None
+    weekly_hours: int | None = None
 
 
 class ProfileResponse(BaseModel):
@@ -59,7 +65,12 @@ async def diagnose(
     req: DiagnoseRequest,
     user: GitHubUser | None = Depends(get_current_user),
 ):
-    """初始诊断: 选择角色 + 水平自评."""
+    """初始诊断: 选择角色 + 水平自评.
+
+    语义是**合并**而非覆盖：role 必给（切换主角色）；goal / weekly_hours /
+    self_assessment 不提供就保留画像里的现值。这样同一端点既能当一次性入职诊断
+    用，也能被角色切换器反复调用而不会冲掉用户已填的目标。
+    """
     profile = _get_or_create(_uid(user))
 
     try:
@@ -69,14 +80,21 @@ async def diagnose(
 
     # 设置主角色
     profile.roles = [RoleProfile(role=role, is_primary=True)]
-    profile.goal = LearningGoal(
-        competition=req.goal,
-        weekly_hours=req.weekly_hours,
-    )
+    # 目标：只在调用方显式提供时更新，逐字段保留
+    if req.goal is not None or req.weekly_hours is not None:
+        profile.goal = LearningGoal(
+            competition=req.goal or profile.goal.competition,
+            weekly_hours=(
+                req.weekly_hours
+                if req.weekly_hours is not None
+                else profile.goal.weekly_hours
+            ),
+        )
 
     if req.self_assessment:
         profile.self_assessment = SelfAssessment(**req.self_assessment)
 
+    profile.updated_at = datetime.now()
     return ProfileResponse(profile=profile)
 
 

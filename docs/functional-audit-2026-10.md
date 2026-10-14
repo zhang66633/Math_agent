@@ -351,8 +351,30 @@ HTTP 表面可以删，提取引擎必须留。
   「美赛/25h」的目标在反复切角色后仍在；后端 6 例（含「只切角色不冲目标」护栏）
   + 前端 3 例（切角色即写、失败不阻断本地切换）。
 
-仍未解决：`_profiles` 是进程内存字典，重启即失——画像没有持久化。要做的话得落
-learning.db 或单独一张表，属于下一个功能点，不在本轮范围。
+### 11.2b 画像落库（用户拍板「做」）
+
+上一轮留下的遗留是「`_profiles` 是进程内存字典，重启即失」。本轮补上：
+
+- 新增 `app/services/profile_store.py`：`ProfileStore(SqliteRepo)`，把整条
+  `UserProfile` 序列化成 JSON 存一列（`profiles` 表，`user_id` 主键），库文件与
+  `learning.db` 相同——画像属学习系统域，不值得单开一个文件。
+  选 JSON 列而不是拆表：画像是一次性读写整个对象的文档型数据（roles/goal/
+  self_assessment/calibrated_skills 嵌套且常变），拆表只会得到一堆单列表 +
+  频繁 migration；pydantic 校验留在模型层，DB 只负责耐久。
+- `profile_routes._get_or_create` 改为读 store，不存在则创建并落库；
+  `diagnose` 改完显式 `save()`（内存字典时代靠引用突变，不需要 save——这是
+  改造时最容易漏的一处，测试守着）。
+- 单行损坏按「不存在」处理并告警，不让整个画像功能不可用。
+- **测试卫生**：`tests/conftest.py` 加 autouse fixture，把画像单例注入临时库——
+  否则走真实 HTTP 的测试（`test_user_isolation` 的 audit_owner_a/b 等）会往真实
+  `learning.db` 写画像行。
+
+验证（决定性）：起服务写画像 → **停服** → 重启 → `GET /profile` 角色与目标都在
+（修复前重启后 roles 为 `[]`）。新增 4 个持久化用例（HTTP 写后 store 能直读、
+换实例模拟重启后仍在、未知用户返回 None、损坏行不炸服务）。
+
+> 遗留（更小了一圈）：画像现在重启不丢，但仍是「单库单文件」——没有多设备同步，
+> 也没有历史版本。对当前单机部署够用。
 
 ### 11.3 删掉的死字段与改掉的取消语义
 
